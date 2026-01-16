@@ -1,74 +1,61 @@
 'use client';
 
-import { usePitchCall, useFeedbackSubmission } from '@/hooks/usePitchCall';
-import CallDisplay from '@/components/CallDisplay';
-import StrikeZone from '@/components/StrikeZone';
-import GameStateHeader from '@/components/GameStateHeader';
-import FeedbackLoop from '@/components/FeedbackLoop';
+import { useState } from 'react';
+import DiscoveryModule from '@/components/DiscoveryModule';
+import ConstructionModule from '@/components/ConstructionModule';
+import AnalysisModule from '@/components/AnalysisModule';
+import OptimizationModule from '@/components/OptimizationModule';
+
+type Module = 'discovery' | 'construction' | 'analysis' | 'optimization';
 
 export default function Home() {
-  const { data, isLoading, error, refetch } = usePitchCall();
-  const feedbackMutation = useFeedbackSubmission();
+  const [activeModule, setActiveModule] = useState<Module>('discovery');
 
-  const handleFeedback = async (feedback: string) => {
-    try {
-      await feedbackMutation.mutateAsync(feedback as any);
-      // Refetch new pitch call after feedback
-      await refetch();
-    } catch (error) {
-      console.error('Error submitting feedback:', error);
-    }
-  };
-
-  if (isLoading) {
-  return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="mb-4 inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-gray-300 border-r-gray-900"></div>
-          <p className="text-gray-600">Loading pitch call...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <p className="mb-4 text-red-600">Error loading pitch call</p>
-          <button
-            onClick={() => refetch()}
-            className="rounded bg-blue-500 px-4 py-2 text-white hover:bg-blue-600"
-          >
-            Retry
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!data) {
-    return null;
-  }
+  const modules: { id: Module; name: string; icon: string }[] = [
+    { id: 'discovery', name: 'Discovery', icon: '🔍' },
+    { id: 'construction', name: 'Construction', icon: '🏗️' },
+    { id: 'analysis', name: 'Analysis', icon: '📊' },
+    { id: 'optimization', name: 'Optimization', icon: '⚡' },
+  ];
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Game State Header */}
-      <GameStateHeader gameState={data.gameState} />
+      {/* Navigation Header */}
+      <header className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center">
+              <h1 className="text-2xl font-bold text-gray-900">DeepRoster</h1>
+              <span className="ml-2 text-sm text-gray-500">Baseball Roster Builder & Analyzer</span>
+            </div>
+            <nav className="flex space-x-1">
+              {modules.map((module) => (
+                <button
+                  key={module.id}
+                  onClick={() => setActiveModule(module.id)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    activeModule === module.id
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  <span className="mr-2">{module.icon}</span>
+                  {module.name}
+                </button>
+              ))}
+            </nav>
+          </div>
+        </div>
+      </header>
 
       {/* Main Content */}
-      <main className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6 lg:p-8">
-        {/* Call Display */}
-        <CallDisplay call={data.call} />
-
-        {/* Strike Zone */}
-        <StrikeZone strikeZone={data.strikeZone} />
-
-        {/* Feedback Loop */}
-        <FeedbackLoop
-          onSubmit={handleFeedback}
-          isSubmitting={feedbackMutation.isPending}
-        />
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="h-[calc(100vh-8rem)]">
+          {activeModule === 'discovery' && <DiscoveryModule />}
+          {activeModule === 'construction' && <ConstructionModule />}
+          {activeModule === 'analysis' && <AnalysisModule />}
+          {activeModule === 'optimization' && <OptimizationModule />}
+        </div>
       </main>
     </div>
   );

@@ -1,34 +1,71 @@
-export interface PitchCall {
-  pitchType: string;
-  location: { x: number; y: number } | { zone: string };
-  confidence: number; // 0-100
+// Position types
+export type Position = 
+  | 'P' | 'C' | '1B' | '2B' | '3B' | 'SS' 
+  | 'LF' | 'CF' | 'RF' | 'DH' | 'UTIL';
+
+// Health risk types
+export type HealthRisk = 'low' | 'medium' | 'high';
+
+// Performance variance types
+export type PerformanceVariance = 'low' | 'medium' | 'high';
+
+export interface Player {
+  id: string;
+  name: string;
+  position: Position;
+  salary: number; // in millions
+  attributes: {
+    battingAverage: number;
+    homeRuns: number;
+    rbis: number;
+    stolenBases: number;
+    onBasePercentage: number;
+    sluggingPercentage: number;
+    era?: number; // for pitchers
+    strikeouts?: number; // for pitchers
+    wins?: number; // for pitchers
+  };
+  healthRisk: HealthRisk;
+  performanceVariance: PerformanceVariance;
+  // For similarity search
+  embedding?: number[]; // UMAP/t-SNE coordinates [x, y]
+  similarityScore?: number;
 }
 
-export interface StrikeZoneData {
-  zones: Array<{
-    row: number; // 0-2 (top to bottom)
-    col: number; // 0-2 (left to right)
-    heatValue: number; // -1 to 1 (negative = weakness/blue, positive = strength/red)
-  }>;
-  target: { row: number; col: number };
+export interface PlayerCard extends Player {
+  x: number; // UMAP/t-SNE x coordinate
+  y: number; // UMAP/t-SNE y coordinate
+  nearestNeighbors?: string[]; // IDs of 5 nearest players
 }
 
-export interface GameState {
-  batterName: string;
-  count: { balls: number; strikes: number };
-  pitcherEnergy: number; // 0-100
+export interface RosterSlot {
+  position: Position;
+  player: Player | null;
+  x: number; // Position on diamond (0-1 normalized)
+  y: number; // Position on diamond (0-1 normalized)
 }
 
-export type FeedbackType =
-  | 'ball'
-  | 'called_strike'
-  | 'swinging_strike'
-  | 'foul'
-  | 'in_play_out'
-  | 'in_play_hit';
+export interface Roster {
+  id: string;
+  name: string;
+  slots: RosterSlot[];
+  totalSalary: number;
+  salaryCap: number;
+}
 
-export interface PitchCallData {
-  call: PitchCall;
-  strikeZone: StrikeZoneData;
-  gameState: GameState;
+export interface SimulationResult {
+  wins: number[];
+  playoffProbability: number;
+  meanWins: number;
+  stdDevWins: number;
+}
+
+export interface TradeComparison {
+  currentPlayer: Player;
+  recommendedPlayer: Player;
+  winDelta: number; // positive = improvement
+  salaryDelta: number; // positive = more expensive
+  attributeDeltas: {
+    [key: string]: number;
+  };
 }
