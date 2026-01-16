@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Pitch Caller",
-  description: "AI-powered pitch calling for strikeouts",
+  title: "DeepRoster",
+  description: "Baseball roster builder and analyzer with AI-powered recommendations",
 };
 
 export default function RootLayout({

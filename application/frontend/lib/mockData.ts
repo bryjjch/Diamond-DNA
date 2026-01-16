@@ -1,89 +1,383 @@
-import type { PitchCallData } from './types';
+import { Player, PlayerCard, Roster, SimulationResult, TradeComparison } from './types';
 
-// Generate random value between min and max
-const randomBetween = (min: number, max: number) => {
-  return Math.random() * (max - min) + min;
+// Generate mock players with UMAP/t-SNE coordinates
+export const mockPlayers: PlayerCard[] = [
+  {
+    id: '1',
+    name: 'Mike Trout',
+    position: 'CF',
+    salary: 35.5,
+    attributes: {
+      battingAverage: 0.291,
+      homeRuns: 41,
+      rbis: 104,
+      stolenBases: 11,
+      onBasePercentage: 0.402,
+      sluggingPercentage: 0.603,
+    },
+    healthRisk: 'medium',
+    performanceVariance: 'low',
+    x: 0.2,
+    y: 0.3,
+    nearestNeighbors: ['2', '3', '4', '5', '6'],
+  },
+  {
+    id: '2',
+    name: 'Ronald Acuña Jr.',
+    position: 'RF',
+    salary: 17.0,
+    attributes: {
+      battingAverage: 0.337,
+      homeRuns: 41,
+      rbis: 106,
+      stolenBases: 73,
+      onBasePercentage: 0.416,
+      sluggingPercentage: 0.596,
+    },
+    healthRisk: 'low',
+    performanceVariance: 'low',
+    x: 0.22,
+    y: 0.32,
+    nearestNeighbors: ['1', '3', '4', '5', '6'],
+  },
+  {
+    id: '3',
+    name: 'Mookie Betts',
+    position: 'RF',
+    salary: 30.0,
+    attributes: {
+      battingAverage: 0.307,
+      homeRuns: 39,
+      rbis: 107,
+      stolenBases: 14,
+      onBasePercentage: 0.408,
+      sluggingPercentage: 0.579,
+    },
+    healthRisk: 'low',
+    performanceVariance: 'low',
+    x: 0.21,
+    y: 0.31,
+    nearestNeighbors: ['1', '2', '4', '5', '6'],
+  },
+  {
+    id: '4',
+    name: 'Juan Soto',
+    position: 'LF',
+    salary: 31.0,
+    attributes: {
+      battingAverage: 0.275,
+      homeRuns: 35,
+      rbis: 109,
+      stolenBases: 12,
+      onBasePercentage: 0.410,
+      sluggingPercentage: 0.519,
+    },
+    healthRisk: 'low',
+    performanceVariance: 'medium',
+    x: 0.19,
+    y: 0.29,
+    nearestNeighbors: ['1', '2', '3', '5', '6'],
+  },
+  {
+    id: '5',
+    name: 'Aaron Judge',
+    position: 'RF',
+    salary: 40.0,
+    attributes: {
+      battingAverage: 0.267,
+      homeRuns: 62,
+      rbis: 131,
+      stolenBases: 16,
+      onBasePercentage: 0.425,
+      sluggingPercentage: 0.686,
+    },
+    healthRisk: 'high',
+    performanceVariance: 'medium',
+    x: 0.18,
+    y: 0.28,
+    nearestNeighbors: ['1', '2', '3', '4', '6'],
+  },
+  {
+    id: '6',
+    name: 'Vladimir Guerrero Jr.',
+    position: '1B',
+    salary: 14.5,
+    attributes: {
+      battingAverage: 0.264,
+      homeRuns: 26,
+      rbis: 94,
+      stolenBases: 4,
+      onBasePercentage: 0.345,
+      sluggingPercentage: 0.444,
+    },
+    healthRisk: 'low',
+    performanceVariance: 'high',
+    x: 0.25,
+    y: 0.35,
+    nearestNeighbors: ['1', '2', '3', '4', '5'],
+  },
+  {
+    id: '7',
+    name: 'Gerrit Cole',
+    position: 'P',
+    salary: 36.0,
+    attributes: {
+      battingAverage: 0.0,
+      homeRuns: 0,
+      rbis: 0,
+      stolenBases: 0,
+      onBasePercentage: 0.0,
+      sluggingPercentage: 0.0,
+      era: 3.50,
+      strikeouts: 257,
+      wins: 15,
+    },
+    healthRisk: 'medium',
+    performanceVariance: 'low',
+    x: 0.7,
+    y: 0.8,
+    nearestNeighbors: ['8', '9', '10', '11', '12'],
+  },
+  {
+    id: '8',
+    name: 'Jacob deGrom',
+    position: 'P',
+    salary: 37.0,
+    attributes: {
+      battingAverage: 0.0,
+      homeRuns: 0,
+      rbis: 0,
+      stolenBases: 0,
+      onBasePercentage: 0.0,
+      sluggingPercentage: 0.0,
+      era: 3.08,
+      strikeouts: 104,
+      wins: 7,
+    },
+    healthRisk: 'high',
+    performanceVariance: 'medium',
+    x: 0.72,
+    y: 0.82,
+    nearestNeighbors: ['7', '9', '10', '11', '12'],
+  },
+  {
+    id: '9',
+    name: 'Shane Bieber',
+    position: 'P',
+    salary: 10.0,
+    attributes: {
+      battingAverage: 0.0,
+      homeRuns: 0,
+      rbis: 0,
+      stolenBases: 0,
+      onBasePercentage: 0.0,
+      sluggingPercentage: 0.0,
+      era: 3.80,
+      strikeouts: 198,
+      wins: 13,
+    },
+    healthRisk: 'medium',
+    performanceVariance: 'low',
+    x: 0.71,
+    y: 0.81,
+    nearestNeighbors: ['7', '8', '10', '11', '12'],
+  },
+  {
+    id: '10',
+    name: 'Francisco Lindor',
+    position: 'SS',
+    salary: 34.1,
+    attributes: {
+      battingAverage: 0.254,
+      homeRuns: 31,
+      rbis: 98,
+      stolenBases: 16,
+      onBasePercentage: 0.336,
+      sluggingPercentage: 0.470,
+    },
+    healthRisk: 'low',
+    performanceVariance: 'low',
+    x: 0.5,
+    y: 0.5,
+    nearestNeighbors: ['11', '12', '13', '14', '15'],
+  },
+  {
+    id: '11',
+    name: 'Bo Bichette',
+    position: 'SS',
+    salary: 11.0,
+    attributes: {
+      battingAverage: 0.290,
+      homeRuns: 20,
+      rbis: 69,
+      stolenBases: 5,
+      onBasePercentage: 0.333,
+      sluggingPercentage: 0.469,
+    },
+    healthRisk: 'medium',
+    performanceVariance: 'medium',
+    x: 0.51,
+    y: 0.51,
+    nearestNeighbors: ['10', '12', '13', '14', '15'],
+  },
+  {
+    id: '12',
+    name: 'Trea Turner',
+    position: 'SS',
+    salary: 27.3,
+    attributes: {
+      battingAverage: 0.266,
+      homeRuns: 26,
+      rbis: 76,
+      stolenBases: 30,
+      onBasePercentage: 0.320,
+      sluggingPercentage: 0.463,
+    },
+    healthRisk: 'low',
+    performanceVariance: 'low',
+    x: 0.49,
+    y: 0.49,
+    nearestNeighbors: ['10', '11', '13', '14', '15'],
+  },
+  {
+    id: '13',
+    name: 'Jose Altuve',
+    position: '2B',
+    salary: 26.0,
+    attributes: {
+      battingAverage: 0.311,
+      homeRuns: 17,
+      rbis: 51,
+      stolenBases: 14,
+      onBasePercentage: 0.393,
+      sluggingPercentage: 0.522,
+    },
+    healthRisk: 'low',
+    performanceVariance: 'low',
+    x: 0.52,
+    y: 0.52,
+    nearestNeighbors: ['10', '11', '12', '14', '15'],
+  },
+  {
+    id: '14',
+    name: 'Jose Ramirez',
+    position: '3B',
+    salary: 13.0,
+    attributes: {
+      battingAverage: 0.282,
+      homeRuns: 24,
+      rbis: 80,
+      stolenBases: 28,
+      onBasePercentage: 0.356,
+      sluggingPercentage: 0.475,
+    },
+    healthRisk: 'low',
+    performanceVariance: 'low',
+    x: 0.48,
+    y: 0.48,
+    nearestNeighbors: ['10', '11', '12', '13', '15'],
+  },
+  {
+    id: '15',
+    name: 'Pete Alonso',
+    position: '1B',
+    salary: 20.5,
+    attributes: {
+      battingAverage: 0.217,
+      homeRuns: 46,
+      rbis: 118,
+      stolenBases: 4,
+      onBasePercentage: 0.318,
+      sluggingPercentage: 0.504,
+    },
+    healthRisk: 'low',
+    performanceVariance: 'medium',
+    x: 0.53,
+    y: 0.53,
+    nearestNeighbors: ['10', '11', '12', '13', '14'],
+  },
+];
+
+// Generate more players with varied coordinates for better scatterplot
+for (let i = 16; i <= 100; i++) {
+  const positions: Array<Player['position']> = ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'DH'];
+  const position = positions[Math.floor(Math.random() * positions.length)];
+  const isPitcher = position === 'P';
+  
+  mockPlayers.push({
+    id: i.toString(),
+    name: `Player ${i}`,
+    position,
+    salary: Math.random() * 40 + 5,
+    attributes: isPitcher ? {
+      battingAverage: 0.0,
+      homeRuns: 0,
+      rbis: 0,
+      stolenBases: 0,
+      onBasePercentage: 0.0,
+      sluggingPercentage: 0.0,
+      era: Math.random() * 2 + 2.5,
+      strikeouts: Math.floor(Math.random() * 200 + 100),
+      wins: Math.floor(Math.random() * 15 + 5),
+    } : {
+      battingAverage: Math.random() * 0.2 + 0.2,
+      homeRuns: Math.floor(Math.random() * 40 + 10),
+      rbis: Math.floor(Math.random() * 100 + 50),
+      stolenBases: Math.floor(Math.random() * 30),
+      onBasePercentage: Math.random() * 0.2 + 0.3,
+      sluggingPercentage: Math.random() * 0.3 + 0.4,
+    },
+    healthRisk: ['low', 'medium', 'high'][Math.floor(Math.random() * 3)] as Player['healthRisk'],
+    performanceVariance: ['low', 'medium', 'high'][Math.floor(Math.random() * 3)] as Player['performanceVariance'],
+    x: Math.random(),
+    y: Math.random(),
+    nearestNeighbors: [],
+  });
+}
+
+export const mockRoster: Roster = {
+  id: '1',
+  name: 'My Team',
+  slots: [
+    { position: 'P', player: null, x: 0.5, y: 0.1 },
+    { position: 'C', player: null, x: 0.5, y: 0.9 },
+    { position: '1B', player: null, x: 0.3, y: 0.7 },
+    { position: '2B', player: null, x: 0.4, y: 0.6 },
+    { position: '3B', player: null, x: 0.6, y: 0.6 },
+    { position: 'SS', player: null, x: 0.5, y: 0.65 },
+    { position: 'LF', player: null, x: 0.2, y: 0.3 },
+    { position: 'CF', player: null, x: 0.5, y: 0.2 },
+    { position: 'RF', player: null, x: 0.8, y: 0.3 },
+    { position: 'DH', player: null, x: 0.1, y: 0.1 },
+  ],
+  totalSalary: 0,
+  salaryCap: 230,
 };
 
-// Common pitch types
-const pitchTypes = [
-  'Fastball',
-  'Slider',
-  'Curveball',
-  'Changeup',
-  'Cutter',
-  'Splitter',
-  'Sinker',
-];
-
-// Zone descriptions for location
-const zoneLabels = [
-  'High Inside',
-  'High Middle',
-  'High Outside',
-  'Middle Inside',
-  'Middle',
-  'Middle Outside',
-  'Low Inside',
-  'Low Middle',
-  'Low Outside',
-];
-
-// Sample batter names
-const batterNames = [
-  'Mike Trout',
-  'Aaron Judge',
-  'Mookie Betts',
-  'Ronald Acuña Jr.',
-  'Juan Soto',
-  'Vladimir Guerrero Jr.',
-  'Fernando Tatis Jr.',
-  'Shohei Ohtani',
-];
-
-export const generateMockPitchCallData = (): PitchCallData => {
-  // Generate random pitch call
-  const pitchType = pitchTypes[Math.floor(Math.random() * pitchTypes.length)];
-  const zoneIndex = Math.floor(Math.random() * zoneLabels.length);
-  const row = Math.floor(zoneIndex / 3);
-  const col = zoneIndex % 3;
-  const confidence = Math.floor(randomBetween(60, 95));
-
-  // Generate strike zone heatmap data
-  const strikeZones = [];
-  for (let r = 0; r < 3; r++) {
-    for (let c = 0; c < 3; c++) {
-      // Generate heat values (-1 to 1) with some randomness
-      const heatValue = randomBetween(-0.8, 0.8);
-      strikeZones.push({ row: r, col: c, heatValue });
-    }
-  }
-
-  // Generate random game state
-  const balls = Math.floor(Math.random() * 4);
-  const strikes = Math.floor(Math.random() * 3);
-  const batterName = batterNames[Math.floor(Math.random() * batterNames.length)];
-  const pitcherEnergy = Math.floor(randomBetween(30, 100));
-
-  return {
-    call: {
-      pitchType,
-      location: { zone: zoneLabels[zoneIndex] },
-      confidence,
-    },
-    strikeZone: {
-      zones: strikeZones,
-      target: { row, col },
-    },
-    gameState: {
-      batterName,
-      count: { balls, strikes },
-      pitcherEnergy,
-    },
-  };
+export const mockSimulationResult: SimulationResult = {
+  wins: Array.from({ length: 1000 }, () => {
+    // Generate normal distribution around 85 wins with std dev of 8
+    const mean = 85;
+    const stdDev = 8;
+    let wins = Math.round(mean + (Math.random() + Math.random() + Math.random() + Math.random() - 2) * stdDev);
+    return Math.max(50, Math.min(120, wins)); // Clamp between 50 and 120
+  }),
+  playoffProbability: 84,
+  meanWins: 85.2,
+  stdDevWins: 7.8,
 };
 
-// Initial mock data
-export const getMockPitchCallData = (): PitchCallData => {
-  return generateMockPitchCallData();
+export const mockTradeComparison: TradeComparison = {
+  currentPlayer: mockPlayers[5], // Vladimir Guerrero Jr.
+  recommendedPlayer: mockPlayers[14], // Jose Ramirez
+  winDelta: 3.2,
+  salaryDelta: -1.5,
+  attributeDeltas: {
+    battingAverage: 0.018,
+    homeRuns: -2,
+    rbis: -14,
+    stolenBases: 24,
+    onBasePercentage: 0.011,
+    sluggingPercentage: 0.031,
+  },
 };
