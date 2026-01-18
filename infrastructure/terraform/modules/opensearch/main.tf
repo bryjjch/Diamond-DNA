@@ -1,3 +1,36 @@
+# Data source to fetch password from Secrets Manager if secret ARN is provided
+data "aws_secretsmanager_secret_version" "master_password" {
+  count     = var.master_user_password_secret_arn != null ? 1 : 0
+  secret_id = var.master_user_password_secret_arn
+}
+
+# Random password for master user if not provided
+resource "random_password" "master_password" {
+  count   = var.master_user_password == null && var.master_user_password_secret_arn == null ? 1 : 0
+  length  = 32
+  special = true
+}
+
+# Local values to extract password and username from secret
+locals {
+  secret_data = var.master_user_password_secret_arn != null ? jsondecode(data.aws_secretsmanager_secret_version.master_password[0].secret_string) : {}
+  secret_password = var.master_user_password_secret_arn != null ? try(local.secret_data.password, local.secret_data.api_key, null) : null
+  secret_username = var.master_user_password_secret_arn != null ? try(local.secret_data.username, null) : null
+  
+  # Determine which password to use: secret > provided > generated
+  final_password = coalesce(
+    local.secret_password,
+    var.master_user_password,
+    try(random_password.master_password[0].result, null)
+  )
+  
+  # Determine which username to use: secret > provided
+  final_username = coalesce(
+    local.secret_username,
+    var.master_user_name
+  )
+}
+
 resource "aws_opensearch_domain" "main" {
   domain_name    = var.domain_name
   engine_version = var.engine_version
@@ -44,8 +77,8 @@ resource "aws_opensearch_domain" "main" {
     enabled                        = true
     internal_user_database_enabled = true
     master_user_options {
-      master_user_name     = var.master_user_name
-      master_user_password = var.master_user_password != null ? var.master_user_password : random_password.master_password[0].result
+      master_user_name     = local.final_username
+      master_user_password = local.final_password
     }
   }
 
@@ -69,13 +102,6 @@ resource "aws_opensearch_domain" "main" {
   depends_on = [
     aws_iam_service_linked_role.opensearch
   ]
-}
-
-# Random password for master user if not provided
-resource "random_password" "master_password" {
-  count   = var.master_user_password == null ? 1 : 0
-  length  = 32
-  special = true
 }
 
 # CloudWatch Log Groups for OpenSearch logging
