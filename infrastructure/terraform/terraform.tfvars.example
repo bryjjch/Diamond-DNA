@@ -40,6 +40,15 @@ sagemaker_endpoint_name       = "pitch-prediction-endpoint"
 sagemaker_model_artifacts_path = "models/"
 sagemaker_instance_type        = "ml.t3.medium"
 
+# Secrets Manager (Optional - use these instead of raw credentials)
+# mlb_api_key_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:mlb-api-key-abc123"
+# opensearch_credentials_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:opensearch-creds-xyz789"
+
+# Sensitive Credentials (Deprecated - use Secrets Manager instead)
+# These should NOT be committed to version control
+# mlb_api_key = "your-mlb-api-key-here"
+# opensearch_master_password = "your-opensearch-password-here"
+
 # Tags
 tags = {
   Project     = "pitch-caller"
