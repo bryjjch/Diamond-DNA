@@ -46,10 +46,14 @@ export default function DiscoveryModule({ onPlayerSelect }: DiscoveryModuleProps
   }));
 
   const handlePointClick = (data: any) => {
-    const player = mockPlayers.find(p => p.id === data.id);
-    if (player) {
-      setSelectedPlayerId(player.id);
-      onPlayerSelect?.(player);
+    if (!data) return;
+    const playerId = data.id || data.payload?.id;
+    if (playerId) {
+      const player = mockPlayers.find(p => p.id === playerId);
+      if (player) {
+        setSelectedPlayerId(player.id);
+        onPlayerSelect?.(player);
+      }
     }
   };
 
@@ -91,11 +95,6 @@ export default function DiscoveryModule({ onPlayerSelect }: DiscoveryModuleProps
         <ResponsiveContainer width="100%" height="100%">
           <ScatterChart
             margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
-            onClick={(e) => {
-              if (e?.activePayload?.[0]?.payload) {
-                handlePointClick(e.activePayload[0].payload);
-              }
-            }}
           >
             <XAxis 
               type="number" 
@@ -117,7 +116,8 @@ export default function DiscoveryModule({ onPlayerSelect }: DiscoveryModuleProps
             <Scatter
               data={chartData}
               fill="#8884d8"
-              onMouseEnter={(data) => setHoveredPlayerId(data.id)}
+              onClick={(data) => handlePointClick(data)}
+              onMouseEnter={(data) => setHoveredPlayerId(data?.id || null)}
               onMouseLeave={() => setHoveredPlayerId(null)}
             >
               {chartData.map((entry, index) => (
