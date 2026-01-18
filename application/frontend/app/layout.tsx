@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "DeepRoster",
+  title: "Diamond DNA",
   description: "Baseball roster builder and analyzer with AI-powered recommendations",
 };
 
