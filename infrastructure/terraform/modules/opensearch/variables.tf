@@ -55,11 +55,9 @@ variable "master_user_name" {
   default     = "admin"
 }
 
-variable "master_user_password" {
-  description = "Master password for OpenSearch (should use AWS Secrets Manager in production)"
+variable "master_user_password_secret_arn" {
+  description = "ARN of AWS Secrets Manager secret containing OpenSearch master password. Secret must contain a 'password' field. If it also contains 'username', that will be used instead of master_user_name."
   type        = string
-  sensitive   = true
-  default     = null
 }
 
 variable "encrypt_at_rest" {

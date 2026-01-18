@@ -13,7 +13,7 @@ variable "environment" {
 variable "name_prefix" {
   description = "Prefix for resource names"
   type        = string
-  default     = "deeproster"
+  default     = "diamonddna"
 }
 
 variable "vpc_cidr" {
@@ -58,10 +58,9 @@ variable "opensearch_master_user_name" {
   default     = "admin"
 }
 
-variable "opensearch_master_password" {
-  description = "Master password for OpenSearch (should use AWS Secrets Manager in production)"
+variable "opensearch_credentials_secret_arn" {
+  description = "ARN of AWS Secrets Manager secret containing OpenSearch credentials. Secret should contain 'username' and 'password' fields."
   type        = string
-  sensitive   = true
 }
 
 variable "opensearch_zone_awareness_enabled" {
@@ -95,11 +94,9 @@ variable "scraper_memory_size" {
   default     = 512
 }
 
-variable "mlb_api_key" {
-  description = "MLB API key (should use Secrets Manager in production)"
+variable "mlb_api_key_secret_arn" {
+  description = "ARN of AWS Secrets Manager secret containing MLB API key. Secret should contain 'api_key' field."
   type        = string
-  sensitive   = true
-  default     = null
 }
 
 # Lambda Configuration - OpenSearch Indexer (Nightly Lab)

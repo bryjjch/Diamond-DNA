@@ -1,12 +1,23 @@
 # DynamoDB Table for User Teams
-module "dynamodb" {
-  source = "../dynamodb"
+resource "aws_dynamodb_table" "user_rosters" {
+  name           = var.dynamodb_table_name
+  billing_mode   = "PAY_PER_REQUEST"
+  hash_key       = var.dynamodb_partition_key
+  range_key      = var.dynamodb_sort_key
 
-  table_name                      = var.dynamodb_table_name
-  partition_key                   = var.dynamodb_partition_key
-  sort_key                        = var.dynamodb_sort_key
-  enable_point_in_time_recovery  = var.dynamodb_enable_pitr
-  kms_key_arn                    = var.dynamodb_kms_key_arn
+  attribute {
+    name = var.dynamodb_partition_key
+    type = "S"
+  }
+
+  attribute {
+    name = var.dynamodb_sort_key
+    type = "S"
+  }
+
+  point_in_time_recovery {
+    enabled = var.dynamodb_enable_pitr
+  }
 
   tags = var.tags
 }
@@ -76,6 +87,14 @@ resource "aws_iam_role_policy" "search" {
           "es:DescribeDomain"
         ]
         Resource = "${var.opensearch_domain_arn}/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ]
+        Resource = [var.opensearch_credentials_secret_arn]
       }
     ]
   })
@@ -100,9 +119,9 @@ resource "aws_lambda_function" "search" {
 
   environment {
     variables = {
-      OPENSEARCH_ENDPOINT = var.opensearch_endpoint
-      OPENSEARCH_USERNAME = var.opensearch_username
-      OPENSEARCH_PASSWORD = var.opensearch_password
+      OPENSEARCH_ENDPOINT               = var.opensearch_endpoint
+      OPENSEARCH_USERNAME               = var.opensearch_username
+      OPENSEARCH_CREDENTIALS_SECRET_ARN = var.opensearch_credentials_secret_arn
     }
   }
 
@@ -183,8 +202,8 @@ resource "aws_iam_role_policy" "simulation" {
           "dynamodb:BatchWriteItem"
         ]
         Resource = [
-          module.dynamodb.table_arn,
-          "${module.dynamodb.table_arn}/*"
+          aws_dynamodb_table.user_rosters.arn,
+          "${aws_dynamodb_table.user_rosters.arn}/*"
         ]
       },
       {
@@ -196,6 +215,14 @@ resource "aws_iam_role_policy" "simulation" {
           "es:DescribeDomain"
         ]
         Resource = "${var.opensearch_domain_arn}/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ]
+        Resource = [var.opensearch_credentials_secret_arn]
       }
     ]
   })
@@ -220,11 +247,11 @@ resource "aws_lambda_function" "simulation" {
 
   environment {
     variables = {
-      DYNAMODB_TABLE_NAME  = module.dynamodb.table_name
-      OPENSEARCH_ENDPOINT  = var.opensearch_endpoint
-      OPENSEARCH_USERNAME  = var.opensearch_username
-      OPENSEARCH_PASSWORD  = var.opensearch_password
-      XGBOOST_MODEL_PATH   = var.xgboost_model_path
+      DYNAMODB_TABLE_NAME              = aws_dynamodb_table.user_rosters.name
+      OPENSEARCH_ENDPOINT              = var.opensearch_endpoint
+      OPENSEARCH_USERNAME              = var.opensearch_username
+      OPENSEARCH_CREDENTIALS_SECRET_ARN = var.opensearch_credentials_secret_arn
+      XGBOOST_MODEL_PATH               = var.xgboost_model_path
     }
   }
 
@@ -383,6 +410,59 @@ resource "aws_api_gateway_integration" "simulate" {
   uri                     = aws_lambda_function.simulation.invoke_arn
 }
 
+# API Gateway Method: OPTIONS (CORS)
+# (This is needed as our Next.js frontend will be on a different origin 
+# than our AWS API Gateway).
+resource "aws_api_gateway_method" "simulate_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.simulate.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# API Gateway Integration: OPTIONS
+resource "aws_api_gateway_integration" "simulate_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.simulate.id
+  http_method = aws_api_gateway_method.simulate_options.http_method
+
+  type = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# API Gateway Method Response: OPTIONS
+resource "aws_api_gateway_method_response" "simulate_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.simulate.id
+  http_method = aws_api_gateway_method.simulate_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+# API Gateway Integration Response: OPTIONS
+resource "aws_api_gateway_integration_response" "simulate_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.simulate.id
+  http_method = aws_api_gateway_method.simulate_options.http_method
+  status_code = aws_api_gateway_method_response.simulate_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+
+  depends_on = [aws_api_gateway_integration.simulate_options]
+}
+
 # Lambda Permissions for API Gateway
 resource "aws_lambda_permission" "search_api" {
   statement_id  = "AllowExecutionFromAPIGateway"
@@ -409,9 +489,17 @@ resource "aws_api_gateway_deployment" "main" {
       aws_api_gateway_resource.find_similar.id,
       aws_api_gateway_method.find_similar.id,
       aws_api_gateway_integration.find_similar.id,
+      aws_api_gateway_method.find_similar_options.id,
+      aws_api_gateway_integration.find_similar_options.id,
+      aws_api_gateway_method_response.find_similar_options.id,
+      aws_api_gateway_integration_response.find_similar_options.id,
       aws_api_gateway_resource.simulate.id,
       aws_api_gateway_method.simulate.id,
       aws_api_gateway_integration.simulate.id,
+      aws_api_gateway_method.simulate_options.id,
+      aws_api_gateway_method_response.simulate.id,
+      aws_api_gateway_integration_response.simulate.id,
+      aws_api_gateway_integration.simulate_options.id,
     ]))
   }
 
@@ -422,8 +510,16 @@ resource "aws_api_gateway_deployment" "main" {
   depends_on = [
     aws_api_gateway_method.find_similar,
     aws_api_gateway_integration.find_similar,
+    aws_api_gateway_method.find_similar_options,
+    aws_api_gateway_integration.find_similar_options,
+    aws_api_gateway_method_response.find_similar_options,
+    aws_api_gateway_integration_response.find_similar_options,
     aws_api_gateway_method.simulate,
     aws_api_gateway_integration.simulate,
+    aws_api_gateway_method.simulate_options,
+    aws_api_gateway_integration.simulate_options,
+    aws_api_gateway_method_response.simulate_options,
+    aws_api_gateway_integration_response.simulate_options
   ]
 }
 

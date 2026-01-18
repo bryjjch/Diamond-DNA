@@ -22,12 +22,6 @@ variable "dynamodb_enable_pitr" {
   default     = false
 }
 
-variable "dynamodb_kms_key_arn" {
-  description = "KMS key ARN for DynamoDB encryption (optional)"
-  type        = string
-  default     = null
-}
-
 variable "search_function_name" {
   description = "Name of the search Lambda function"
   type        = string
@@ -90,10 +84,9 @@ variable "opensearch_username" {
   default     = "admin"
 }
 
-variable "opensearch_password" {
-  description = "OpenSearch master password"
+variable "opensearch_credentials_secret_arn" {
+  description = "ARN of AWS Secrets Manager secret containing OpenSearch credentials. Secret should contain 'username' and 'password' fields."
   type        = string
-  sensitive   = true
 }
 
 variable "simulation_function_name" {

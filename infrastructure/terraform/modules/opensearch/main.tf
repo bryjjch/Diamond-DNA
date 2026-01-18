@@ -1,3 +1,18 @@
+# Data source to fetch password from Secrets Manager
+# Note: The password is needed here because aws_opensearch_domain requires the actual
+# password value at creation time (not just an ARN). This means the password will
+# be stored in Terraform state. Lambda functions retrieve credentials at runtime
+# from Secrets Manager, but Terraform needs the value to create the domain.
+data "aws_secretsmanager_secret_version" "master_password" {
+  secret_id = var.master_user_password_secret_arn
+}
+
+# Local values to extract password from secret
+locals {
+  secret_data     = jsondecode(data.aws_secretsmanager_secret_version.master_password.secret_string)
+  master_password = local.secret_data.password
+}
+
 resource "aws_opensearch_domain" "main" {
   domain_name    = var.domain_name
   engine_version = var.engine_version
@@ -45,7 +60,7 @@ resource "aws_opensearch_domain" "main" {
     internal_user_database_enabled = true
     master_user_options {
       master_user_name     = var.master_user_name
-      master_user_password = var.master_user_password != null ? var.master_user_password : random_password.master_password[0].result
+      master_user_password = local.master_password
     }
   }
 
@@ -69,13 +84,6 @@ resource "aws_opensearch_domain" "main" {
   depends_on = [
     aws_iam_service_linked_role.opensearch
   ]
-}
-
-# Random password for master user if not provided
-resource "random_password" "master_password" {
-  count   = var.master_user_password == null ? 1 : 0
-  length  = 32
-  special = true
 }
 
 # CloudWatch Log Groups for OpenSearch logging
