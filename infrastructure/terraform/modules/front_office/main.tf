@@ -19,11 +19,6 @@ resource "aws_dynamodb_table" "user_rosters" {
     enabled = var.dynamodb_enable_pitr
   }
 
-  server_side_encryption {
-    enabled     = var.dynamodb_kms_key_arn != null
-    kms_key_arn = var.dynamodb_kms_key_arn
-  }
-
   tags = var.tags
 }
 
@@ -99,7 +94,7 @@ resource "aws_iam_role_policy" "search" {
           "secretsmanager:GetSecretValue",
           "secretsmanager:DescribeSecret"
         ]
-        Resource = var.opensearch_credentials_secret_arn != null ? [var.opensearch_credentials_secret_arn] : []
+        Resource = [var.opensearch_credentials_secret_arn]
       }
     ]
   })
@@ -127,7 +122,6 @@ resource "aws_lambda_function" "search" {
       OPENSEARCH_ENDPOINT               = var.opensearch_endpoint
       OPENSEARCH_USERNAME               = var.opensearch_username
       OPENSEARCH_CREDENTIALS_SECRET_ARN = var.opensearch_credentials_secret_arn
-      OPENSEARCH_PASSWORD               = var.opensearch_password # Fallback for backward compatibility
     }
   }
 
@@ -228,7 +222,7 @@ resource "aws_iam_role_policy" "simulation" {
           "secretsmanager:GetSecretValue",
           "secretsmanager:DescribeSecret"
         ]
-        Resource = var.opensearch_credentials_secret_arn != null ? [var.opensearch_credentials_secret_arn] : []
+        Resource = [var.opensearch_credentials_secret_arn]
       }
     ]
   })
@@ -257,7 +251,6 @@ resource "aws_lambda_function" "simulation" {
       OPENSEARCH_ENDPOINT              = var.opensearch_endpoint
       OPENSEARCH_USERNAME              = var.opensearch_username
       OPENSEARCH_CREDENTIALS_SECRET_ARN = var.opensearch_credentials_secret_arn
-      OPENSEARCH_PASSWORD              = var.opensearch_password # Fallback for backward compatibility
       XGBOOST_MODEL_PATH               = var.xgboost_model_path
     }
   }
@@ -498,10 +491,14 @@ resource "aws_api_gateway_deployment" "main" {
       aws_api_gateway_integration.find_similar.id,
       aws_api_gateway_method.find_similar_options.id,
       aws_api_gateway_integration.find_similar_options.id,
+      aws_api_gateway_method_response.find_similar_options.id,
+      aws_api_gateway_integration_response.find_similar_options.id,
       aws_api_gateway_resource.simulate.id,
       aws_api_gateway_method.simulate.id,
       aws_api_gateway_integration.simulate.id,
       aws_api_gateway_method.simulate_options.id,
+      aws_api_gateway_method_response.simulate.id,
+      aws_api_gateway_integration_response.simulate.id,
       aws_api_gateway_integration.simulate_options.id,
     ]))
   }
@@ -515,10 +512,14 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_integration.find_similar,
     aws_api_gateway_method.find_similar_options,
     aws_api_gateway_integration.find_similar_options,
+    aws_api_gateway_method_response.find_similar_options,
+    aws_api_gateway_integration_response.find_similar_options,
     aws_api_gateway_method.simulate,
     aws_api_gateway_integration.simulate,
     aws_api_gateway_method.simulate_options,
     aws_api_gateway_integration.simulate_options,
+    aws_api_gateway_method_response.simulate_options,
+    aws_api_gateway_integration_response.simulate_options
   ]
 }
 

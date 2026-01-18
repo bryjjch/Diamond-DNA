@@ -18,58 +18,6 @@ provider "aws" {
   region  = var.region
 }
 
-# ============================================================================
-# AWS SECRETS MANAGER
-# ============================================================================
-# Store sensitive credentials securely
-resource "aws_secretsmanager_secret" "mlb_api_key" {
-  count       = var.mlb_api_key_secret_arn == null && var.mlb_api_key != null ? 1 : 0
-  name        = "${var.name_prefix}-mlb-api-key-${var.environment}"
-  description = "MLB API key for data scraping"
-
-  tags = merge(
-    local.common_tags,
-    {
-      Name = "${var.name_prefix}-mlb-api-key-${var.environment}"
-    }
-  )
-}
-
-resource "aws_secretsmanager_secret_version" "mlb_api_key" {
-  count     = var.mlb_api_key_secret_arn == null && var.mlb_api_key != null ? 1 : 0
-  secret_id = aws_secretsmanager_secret.mlb_api_key[0].id
-  secret_string = jsonencode({
-    api_key = var.mlb_api_key
-  })
-}
-
-resource "aws_secretsmanager_secret" "opensearch_credentials" {
-  count       = var.opensearch_credentials_secret_arn == null && var.opensearch_master_password != null ? 1 : 0
-  name        = "${var.name_prefix}-opensearch-credentials-${var.environment}"
-  description = "OpenSearch master user credentials"
-
-  tags = merge(
-    local.common_tags,
-    {
-      Name = "${var.name_prefix}-opensearch-credentials-${var.environment}"
-    }
-  )
-}
-
-resource "aws_secretsmanager_secret_version" "opensearch_credentials" {
-  count     = var.opensearch_credentials_secret_arn == null && var.opensearch_master_password != null ? 1 : 0
-  secret_id = aws_secretsmanager_secret.opensearch_credentials[0].id
-  secret_string = jsonencode({
-    username = var.opensearch_master_user_name
-    password = var.opensearch_master_password
-  })
-}
-
-# Local values for secret ARNs
-locals {
-  mlb_api_key_secret_arn = var.mlb_api_key_secret_arn != null ? var.mlb_api_key_secret_arn : (var.mlb_api_key != null ? aws_secretsmanager_secret.mlb_api_key[0].arn : null)
-  opensearch_credentials_secret_arn = var.opensearch_credentials_secret_arn != null ? var.opensearch_credentials_secret_arn : (var.opensearch_master_password != null ? aws_secretsmanager_secret.opensearch_credentials[0].arn : null)
-}
 
 # ============================================================================
 # NETWORKING MODULE
@@ -100,8 +48,7 @@ module "opensearch" {
   subnet_ids                       = module.networking.private_subnet_ids
   vpc_id                           = module.networking.vpc_id
   master_user_name                 = var.opensearch_master_user_name
-  master_user_password             = var.opensearch_master_password
-  master_user_password_secret_arn  = local.opensearch_credentials_secret_arn
+  master_user_password_secret_arn  = var.opensearch_credentials_secret_arn
   zone_awareness_enabled           = var.opensearch_zone_awareness_enabled
   availability_zone_count          = length(local.availability_zones)
 
@@ -129,7 +76,7 @@ module "nightly_lab" {
   scraper_handler                  = var.scraper_handler
   scraper_timeout                  = var.scraper_timeout
   scraper_memory_size              = var.scraper_memory_size
-  mlb_api_key_secret_arn           = local.mlb_api_key_secret_arn
+  mlb_api_key_secret_arn           = var.mlb_api_key_secret_arn
   opensearch_indexer_function_name = "${var.name_prefix}-opensearch-indexer-${var.environment}"
   opensearch_indexer_zip_path      = var.opensearch_indexer_zip_path
   opensearch_indexer_handler       = var.opensearch_indexer_handler
@@ -138,7 +85,7 @@ module "nightly_lab" {
   opensearch_endpoint              = module.opensearch.domain_endpoint
   opensearch_domain_arn            = module.opensearch.domain_arn
   opensearch_username              = var.opensearch_master_user_name
-  opensearch_credentials_secret_arn = local.opensearch_credentials_secret_arn
+  opensearch_credentials_secret_arn = var.opensearch_credentials_secret_arn
   lambda_runtime                   = var.lambda_runtime
   clean_data_path                  = var.clean_data_path
   training_output_path             = var.training_output_path
@@ -184,7 +131,7 @@ module "front_office" {
   opensearch_endpoint              = module.opensearch.domain_endpoint
   opensearch_domain_arn            = module.opensearch.domain_arn
   opensearch_username              = var.opensearch_master_user_name
-  opensearch_credentials_secret_arn = local.opensearch_credentials_secret_arn
+  opensearch_credentials_secret_arn = var.opensearch_credentials_secret_arn
   xgboost_model_path           = var.xgboost_model_path
   lambda_runtime               = var.lambda_runtime
   log_retention_days           = var.log_retention_days

@@ -52,17 +52,9 @@ variable "scraper_memory_size" {
   default     = 512
 }
 
-variable "mlb_api_key" {
-  description = "MLB API key (deprecated: use mlb_api_key_secret_arn instead)"
-  type        = string
-  sensitive   = true
-  default     = null
-}
-
 variable "mlb_api_key_secret_arn" {
   description = "ARN of AWS Secrets Manager secret containing MLB API key. Secret should contain 'api_key' field."
   type        = string
-  default     = null
 }
 
 variable "opensearch_indexer_function_name" {
@@ -110,17 +102,9 @@ variable "opensearch_username" {
   default     = "admin"
 }
 
-variable "opensearch_password" {
-  description = "OpenSearch master password (deprecated: use opensearch_credentials_secret_arn instead)"
-  type        = string
-  sensitive   = true
-  default     = null
-}
-
 variable "opensearch_credentials_secret_arn" {
   description = "ARN of AWS Secrets Manager secret containing OpenSearch credentials. Secret should contain 'username' and 'password' fields."
   type        = string
-  default     = null
 }
 
 variable "lambda_runtime" {

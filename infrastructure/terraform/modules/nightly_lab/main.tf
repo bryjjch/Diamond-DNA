@@ -71,7 +71,7 @@ resource "aws_iam_role_policy" "scraper" {
           "secretsmanager:GetSecretValue",
           "secretsmanager:DescribeSecret"
         ]
-        Resource = var.mlb_api_key_secret_arn != null ? [var.mlb_api_key_secret_arn] : []
+        Resource = [var.mlb_api_key_secret_arn]
       }
     ]
   })
@@ -92,9 +92,8 @@ resource "aws_lambda_function" "scraper" {
 
   environment {
     variables = {
-      RAW_DATA_BUCKET           = module.s3.data_lake_bucket_name
-      MLB_API_KEY_SECRET_ARN   = var.mlb_api_key_secret_arn
-      MLB_API_KEY              = var.mlb_api_key # Fallback for backward compatibility
+      RAW_DATA_BUCKET         = module.s3.data_lake_bucket_name
+      MLB_API_KEY_SECRET_ARN  = var.mlb_api_key_secret_arn
     }
   }
 
@@ -407,7 +406,7 @@ resource "aws_iam_role_policy" "opensearch_indexer" {
           "secretsmanager:GetSecretValue",
           "secretsmanager:DescribeSecret"
         ]
-        Resource = var.opensearch_credentials_secret_arn != null ? [var.opensearch_credentials_secret_arn] : []
+        Resource = [var.opensearch_credentials_secret_arn]
       }
     ]
   })
@@ -432,12 +431,11 @@ resource "aws_lambda_function" "opensearch_indexer" {
 
   environment {
     variables = {
-      OPENSEARCH_ENDPOINT                = var.opensearch_endpoint
-      OPENSEARCH_USERNAME                = var.opensearch_username
-      OPENSEARCH_CREDENTIALS_SECRET_ARN  = var.opensearch_credentials_secret_arn
-      OPENSEARCH_PASSWORD                = var.opensearch_password # Fallback for backward compatibility
-      VECTORS_S3_BUCKET                  = module.s3.model_artifacts_bucket_name
-      VECTORS_S3_PATH                    = "${var.training_output_path}/vectors/"
+      OPENSEARCH_ENDPOINT               = var.opensearch_endpoint
+      OPENSEARCH_USERNAME               = var.opensearch_username
+      OPENSEARCH_CREDENTIALS_SECRET_ARN = var.opensearch_credentials_secret_arn
+      VECTORS_S3_BUCKET                 = module.s3.model_artifacts_bucket_name
+      VECTORS_S3_PATH                   = "${var.training_output_path}/vectors/"
     }
   }
 
