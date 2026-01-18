@@ -56,9 +56,15 @@ variable "master_user_name" {
 }
 
 variable "master_user_password" {
-  description = "Master password for OpenSearch (should use AWS Secrets Manager in production)"
+  description = "Master password for OpenSearch (deprecated: use master_user_password_secret_arn instead)"
   type        = string
   sensitive   = true
+  default     = null
+}
+
+variable "master_user_password_secret_arn" {
+  description = "ARN of AWS Secrets Manager secret containing OpenSearch master password. Secret should contain 'password' field, or if it contains both 'username' and 'password', both will be used."
+  type        = string
   default     = null
 }
 

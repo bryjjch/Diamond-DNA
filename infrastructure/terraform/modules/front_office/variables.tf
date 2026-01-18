@@ -91,9 +91,16 @@ variable "opensearch_username" {
 }
 
 variable "opensearch_password" {
-  description = "OpenSearch master password"
+  description = "OpenSearch master password (deprecated: use opensearch_credentials_secret_arn instead)"
   type        = string
   sensitive   = true
+  default     = null
+}
+
+variable "opensearch_credentials_secret_arn" {
+  description = "ARN of AWS Secrets Manager secret containing OpenSearch credentials. Secret should contain 'username' and 'password' fields."
+  type        = string
+  default     = null
 }
 
 variable "simulation_function_name" {

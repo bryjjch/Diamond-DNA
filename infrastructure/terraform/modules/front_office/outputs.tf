@@ -30,12 +30,12 @@ output "simulation_function_arn" {
 
 output "dynamodb_table_name" {
   description = "Name of the DynamoDB table"
-  value       = module.dynamodb.table_name
+  value       = aws_dynamodb_table.user_rosters.name
 }
 
 output "dynamodb_table_arn" {
   description = "ARN of the DynamoDB table"
-  value       = module.dynamodb.table_arn
+  value       = aws_dynamodb_table.user_rosters.arn
 }
 
 output "lambda_security_group_id" {
