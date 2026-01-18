@@ -10,7 +10,7 @@ data "aws_secretsmanager_secret_version" "master_password" {
 # Local values to extract password from secret
 locals {
   secret_data     = jsondecode(data.aws_secretsmanager_secret_version.master_password.secret_string)
-  master_password = try(local.secret_data.password, local.secret_data.api_key, null)
+  master_password = local.secret_data.password
 }
 
 resource "aws_opensearch_domain" "main" {

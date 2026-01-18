@@ -56,7 +56,7 @@ variable "master_user_name" {
 }
 
 variable "master_user_password_secret_arn" {
-  description = "ARN of AWS Secrets Manager secret containing OpenSearch master password. Secret should contain 'password' field, or if it contains both 'username' and 'password', both will be used."
+  description = "ARN of AWS Secrets Manager secret containing OpenSearch master password. Secret must contain a 'password' field. If it also contains 'username', that will be used instead of master_user_name."
   type        = string
 }
 
