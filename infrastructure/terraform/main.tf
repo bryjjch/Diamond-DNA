@@ -168,3 +168,31 @@ resource "aws_security_group_rule" "opensearch_allow_lambda_front_office" {
   security_group_id        = module.opensearch.security_group_id
   description              = "Allow front_office Lambda to access OpenSearch"
 }
+
+# ============================================================================
+# BATCH BACKFILL MODULE
+# ============================================================================
+# Handles batch job for backfilling historical Statcast pitch data
+module "batch_backfill" {
+  source = "./modules/batch_backfill"
+
+  name_prefix              = var.name_prefix
+  vpc_id                   = module.networking.vpc_id
+  subnet_ids               = module.networking.private_subnet_ids
+  data_lake_bucket_name    = module.nightly_lab.data_lake_bucket_name
+  data_lake_bucket_arn     = null  # Will be constructed from bucket name
+  container_image_uri      = var.batch_backfill_image_uri
+  job_start_year           = var.batch_backfill_start_year
+  job_end_year             = var.batch_backfill_end_year
+  s3_prefix                = var.batch_backfill_s3_prefix
+  vcpus                    = var.batch_backfill_vcpus
+  memory                   = var.batch_backfill_memory
+  log_retention_days       = var.log_retention_days
+
+  tags = local.common_tags
+
+  depends_on = [
+    module.networking,
+    module.nightly_lab
+  ]
+}

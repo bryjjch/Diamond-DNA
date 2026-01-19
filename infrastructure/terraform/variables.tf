@@ -261,3 +261,40 @@ variable "tags" {
     ManagedBy = "terraform"
   }
 }
+
+# Batch Backfill Configuration
+variable "batch_backfill_image_uri" {
+  description = "ECR container image URI for the Statcast backfill batch job"
+  type        = string
+  default     = null
+}
+
+variable "batch_backfill_start_year" {
+  description = "Start year for Statcast data backfill"
+  type        = number
+  default     = 2019
+}
+
+variable "batch_backfill_end_year" {
+  description = "End year for Statcast data backfill"
+  type        = number
+  default     = 2024
+}
+
+variable "batch_backfill_s3_prefix" {
+  description = "S3 prefix/path for storing Statcast backfill data"
+  type        = string
+  default     = "raw-data/statcast"
+}
+
+variable "batch_backfill_vcpus" {
+  description = "Number of vCPUs for Batch backfill job container"
+  type        = number
+  default     = 2
+}
+
+variable "batch_backfill_memory" {
+  description = "Memory (in MB) for Batch backfill job container"
+  type        = number
+  default     = 4096
+}
