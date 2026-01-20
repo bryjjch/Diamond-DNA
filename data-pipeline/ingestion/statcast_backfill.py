@@ -7,6 +7,8 @@ Downloads pitch-level Statcast data from pybaseball in 5-day chunks
 aggregated by year.
 """
 
+import io
+import time
 import argparse
 import logging
 import sys
@@ -79,8 +81,7 @@ def fetch_statcast_data(start_date: datetime, end_date: datetime, max_retries: i
         except Exception as e:
             logger.error(f"Error fetching data for {start_str} to {end_str} (attempt {attempt + 1}): {e}")
             if attempt < max_retries - 1:
-                import time
-                wait_time = (attempt + 1) * 2  # Exponential backoff
+                wait_time = (attempt + 1) ** 2  # Exponential backoff
                 logger.info(f"Retrying in {wait_time} seconds...")
                 time.sleep(wait_time)
             else:
@@ -97,7 +98,6 @@ def upload_to_s3(df: pd.DataFrame, bucket: str, key: str):
         bucket: S3 bucket name
         key: S3 object key (path)
     """
-    import io
     
     logger.info(f"Uploading {len(df)} records to s3://{bucket}/{key}")
     
@@ -155,10 +155,14 @@ def process_year_range(
             # Fetch data for this chunk
             df = fetch_statcast_data(chunk_start, chunk_end)
             
-            if df is not None and not df.empty:
-                year_data[year].append(df)
-            elif df is None:
+            if df is None:
+                # fetch failure
                 logger.error(f"Failed to fetch data for chunk {chunk_start.date()} to {chunk_end.date()}")
+            elif df.empty:
+                # no data available for this chunk (empty dataframe)
+                logger.info(f"No statcast data for chunk {chunk_start.date()} to {chunk_end.date()}")
+            else:
+                year_data[year].append(df)
         
         # Aggregate all chunks for this year
         if year_data[year]:
@@ -198,7 +202,6 @@ def main():
     parser.add_argument(
         '--s3-bucket',
         type=str,
-        required=True,
         default='diamond-dna-raw-data',
         help='S3 bucket name (default: diamond-dna-raw-data)'
     )
