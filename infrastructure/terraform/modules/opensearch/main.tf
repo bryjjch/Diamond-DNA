@@ -1,16 +1,17 @@
-# Data source to fetch password from Secrets Manager
-# Note: The password is needed here because aws_opensearch_domain requires the actual
-# password value at creation time (not just an ARN). This means the password will
-# be stored in Terraform state. Lambda functions retrieve credentials at runtime
-# from Secrets Manager, but Terraform needs the value to create the domain.
-data "aws_secretsmanager_secret_version" "master_password" {
-  secret_id = var.master_user_password_secret_arn
+# Store OpenSearch password in AWS Secrets Manager
+resource "aws_secretsmanager_secret" "os_creds" {
+  name        = "${var.domain_name}-master-user"
+  description = "Master user credentials for ${var.domain_name} OpenSearch domain"
+
+  tags = var.tags
 }
 
-# Local values to extract password from secret
-locals {
-  secret_data     = jsondecode(data.aws_secretsmanager_secret_version.master_password.secret_string)
-  master_password = local.secret_data.password
+resource "aws_secretsmanager_secret_version" "os_creds_version" {
+  secret_id = aws_secretsmanager_secret.os_creds.id
+  secret_string = jsonencode({
+    username = var.master_user_name
+    password = var.master_user_password
+  })
 }
 
 resource "aws_opensearch_domain" "main" {
@@ -60,7 +61,7 @@ resource "aws_opensearch_domain" "main" {
     internal_user_database_enabled = true
     master_user_options {
       master_user_name     = var.master_user_name
-      master_user_password = local.master_password
+      master_user_password = var.master_user_password
     }
   }
 

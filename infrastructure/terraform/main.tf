@@ -42,15 +42,15 @@ module "networking" {
 module "opensearch" {
   source = "./modules/opensearch"
 
-  domain_name                      = "${var.name_prefix}-opensearch-${var.environment}"
-  instance_type                    = var.opensearch_instance_type
-  instance_count                   = var.opensearch_instance_count
-  subnet_ids                       = module.networking.private_subnet_ids
-  vpc_id                           = module.networking.vpc_id
-  master_user_name                 = var.opensearch_master_user_name
-  master_user_password_secret_arn  = var.opensearch_credentials_secret_arn
-  zone_awareness_enabled           = var.opensearch_zone_awareness_enabled
-  availability_zone_count          = length(local.availability_zones)
+  domain_name            = "${var.name_prefix}-opensearch-${var.environment}"
+  instance_type          = var.opensearch_instance_type
+  instance_count         = var.opensearch_instance_count
+  subnet_ids             = module.networking.private_subnet_ids
+  vpc_id                 = module.networking.vpc_id
+  master_user_name       = var.opensearch_master_user_name
+  master_user_password   = var.opensearch_master_user_password
+  zone_awareness_enabled = var.opensearch_zone_awareness_enabled
+  availability_zone_count = length(local.availability_zones)
 
   tags = local.common_tags
 
@@ -85,11 +85,13 @@ module "nightly_lab" {
   opensearch_endpoint              = module.opensearch.domain_endpoint
   opensearch_domain_arn            = module.opensearch.domain_arn
   opensearch_username              = var.opensearch_master_user_name
-  opensearch_credentials_secret_arn = var.opensearch_credentials_secret_arn
+  opensearch_credentials_secret_arn = module.opensearch.credentials_secret_arn
   lambda_runtime                   = var.lambda_runtime
   clean_data_path                  = var.clean_data_path
   training_output_path             = var.training_output_path
-  player2vec_training_image        = var.player2vec_training_image
+  pitcher2vec_training_image      = var.pitcher2vec_training_image
+  hitter2vec_training_image        = var.hitter2vec_training_image
+  xgboost_training_image           = var.xgboost_training_image
   training_instance_type           = var.training_instance_type
   training_instance_count          = var.training_instance_count
   log_retention_days               = var.log_retention_days
@@ -131,7 +133,7 @@ module "front_office" {
   opensearch_endpoint              = module.opensearch.domain_endpoint
   opensearch_domain_arn            = module.opensearch.domain_arn
   opensearch_username              = var.opensearch_master_user_name
-  opensearch_credentials_secret_arn = var.opensearch_credentials_secret_arn
+  opensearch_credentials_secret_arn = module.opensearch.credentials_secret_arn
   xgboost_model_path           = var.xgboost_model_path
   lambda_runtime               = var.lambda_runtime
   log_retention_days           = var.log_retention_days

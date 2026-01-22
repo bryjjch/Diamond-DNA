@@ -15,6 +15,30 @@ resource "aws_dynamodb_table" "user_rosters" {
     type = "S"
   }
 
+  attribute {
+    name = "Name"
+    type = "S"
+  }
+
+  attribute {
+    name = "UserID"
+    type = "S"
+  }
+
+  attribute {
+    name = "Pos"
+    type = "S"
+  }
+
+  # GSI: "Show me User123's rosters"
+  global_secondary_index {
+    name               = "UserRostersIndex"
+    hash_key           = "UserID"     # PK = USER#123
+    range_key          = "RosterID"   # SK = ROSTER#uuid
+    projection_type    = "INCLUDE"
+    non_key_attributes = ["RosterName"]
+  }
+
   point_in_time_recovery {
     enabled = var.dynamodb_enable_pitr
   }
@@ -326,7 +350,7 @@ resource "aws_api_gateway_integration" "find_similar" {
   resource_id = aws_api_gateway_resource.find_similar.id
   http_method = aws_api_gateway_method.find_similar.http_method
 
-  integration_http_method = "POST"
+  integration_http_method = "GET"
   type                    = "AWS_PROXY"
   uri                     = aws_lambda_function.search.invoke_arn
 }
@@ -486,20 +510,27 @@ resource "aws_api_gateway_deployment" "main" {
 
   triggers = {
     redeployment = sha1(jsonencode([
+      # find_similar methods
       aws_api_gateway_resource.find_similar.id,
       aws_api_gateway_method.find_similar.id,
       aws_api_gateway_integration.find_similar.id,
+
+      # find_similar OPTIONS methods
       aws_api_gateway_method.find_similar_options.id,
       aws_api_gateway_integration.find_similar_options.id,
       aws_api_gateway_method_response.find_similar_options.id,
       aws_api_gateway_integration_response.find_similar_options.id,
+
+      # simulate methods
       aws_api_gateway_resource.simulate.id,
       aws_api_gateway_method.simulate.id,
       aws_api_gateway_integration.simulate.id,
+
+      # simulate OPTIONS methods
       aws_api_gateway_method.simulate_options.id,
-      aws_api_gateway_method_response.simulate.id,
-      aws_api_gateway_integration_response.simulate.id,
       aws_api_gateway_integration.simulate_options.id,
+      aws_api_gateway_method_response.simulate_options.id,
+      aws_api_gateway_integration_response.simulate_options.id,
     ]))
   }
 

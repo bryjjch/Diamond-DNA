@@ -44,6 +44,11 @@ output "opensearch_kibana_endpoint" {
   value       = module.opensearch.kibana_endpoint
 }
 
+output "opensearch_credentials_secret_arn" {
+  description = "ARN of the Secrets Manager secret containing OpenSearch master user credentials"
+  value       = module.opensearch.credentials_secret_arn
+}
+
 # ============================================================================
 # NIGHTLY_LAB OUTPUTS
 # ============================================================================

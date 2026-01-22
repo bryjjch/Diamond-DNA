@@ -5,15 +5,15 @@ variable "dynamodb_table_name" {
 }
 
 variable "dynamodb_partition_key" {
-  description = "Partition key for DynamoDB table"
+  description = "Partition key for DynamoDB table (RosterID)"
   type        = string
-  default     = "UserId"
+  default     = "RosterID"
 }
 
 variable "dynamodb_sort_key" {
-  description = "Sort key for DynamoDB table"
+  description = "Sort key for DynamoDB table (ItemType)"
   type        = string
-  default     = "RosterId"
+  default     = "ItemType"
 }
 
 variable "dynamodb_enable_pitr" {
