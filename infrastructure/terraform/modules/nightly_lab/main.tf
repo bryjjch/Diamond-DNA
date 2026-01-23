@@ -64,14 +64,6 @@ resource "aws_iam_role_policy" "scraper" {
           "${module.s3.data_lake_bucket_arn}/*",
           module.s3.data_lake_bucket_arn
         ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "secretsmanager:GetSecretValue",
-          "secretsmanager:DescribeSecret"
-        ]
-        Resource = [var.mlb_api_key_secret_arn]
       }
     ]
   })

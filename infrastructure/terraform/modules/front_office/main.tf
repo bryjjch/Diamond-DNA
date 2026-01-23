@@ -16,17 +16,7 @@ resource "aws_dynamodb_table" "user_rosters" {
   }
 
   attribute {
-    name = "Name"
-    type = "S"
-  }
-
-  attribute {
     name = "UserID"
-    type = "S"
-  }
-
-  attribute {
-    name = "Pos"
     type = "S"
   }
 
@@ -35,8 +25,7 @@ resource "aws_dynamodb_table" "user_rosters" {
     name               = "UserRostersIndex"
     hash_key           = "UserID"     # PK = USER#123
     range_key          = "RosterID"   # SK = ROSTER#uuid
-    projection_type    = "INCLUDE"
-    non_key_attributes = ["RosterName"]
+    projection_type    = "ALL"
   }
 
   point_in_time_recovery {
@@ -350,7 +339,7 @@ resource "aws_api_gateway_integration" "find_similar" {
   resource_id = aws_api_gateway_resource.find_similar.id
   http_method = aws_api_gateway_method.find_similar.http_method
 
-  integration_http_method = "GET"
+  integration_http_method = "POST"
   type                    = "AWS_PROXY"
   uri                     = aws_lambda_function.search.invoke_arn
 }
