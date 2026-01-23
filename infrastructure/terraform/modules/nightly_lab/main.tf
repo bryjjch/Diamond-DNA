@@ -64,14 +64,6 @@ resource "aws_iam_role_policy" "scraper" {
           "${module.s3.data_lake_bucket_arn}/*",
           module.s3.data_lake_bucket_arn
         ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "secretsmanager:GetSecretValue",
-          "secretsmanager:DescribeSecret"
-        ]
-        Resource = [var.mlb_api_key_secret_arn]
       }
     ]
   })
@@ -93,7 +85,6 @@ resource "aws_lambda_function" "scraper" {
   environment {
     variables = {
       RAW_DATA_BUCKET         = module.s3.data_lake_bucket_name
-      MLB_API_KEY_SECRET_ARN  = var.mlb_api_key_secret_arn
     }
   }
 
@@ -245,14 +236,14 @@ resource "aws_iam_role_policy" "sagemaker_training_s3" {
   })
 }
 
-# SageMaker Training Job: Train player2vec autoencoder
-resource "aws_sagemaker_training_job" "player2vec" {
+# SageMaker Training Job: Train Pitcher2Vec autoencoder
+resource "aws_sagemaker_training_job" "pitcher2vec" {
   count             = 0 # Will be triggered by Lambda, placeholder for configuration
-  training_job_name = "${var.name_prefix}-player2vec-${formatdate("YYYY-MM-DD-hhmm", timestamp())}"
+  training_job_name = "${var.name_prefix}-pitcher2vec-${formatdate("YYYY-MM-DD-hhmm", timestamp())}"
   role_arn          = aws_iam_role.sagemaker_training.arn
   algorithm_specification {
     training_input_mode = "File"
-    training_image      = var.player2vec_training_image
+    training_image      = var.pitcher2vec_training_image
   }
 
   input_data_config {
@@ -267,7 +258,45 @@ resource "aws_sagemaker_training_job" "player2vec" {
   }
 
   output_data_config {
-    s3_output_path = "s3://${module.s3.model_artifacts_bucket_name}/${var.training_output_path}"
+    s3_output_path = "s3://${module.s3.model_artifacts_bucket_name}/${var.training_output_path}/pitcher2vec/"
+  }
+
+  resource_config {
+    instance_count    = var.training_instance_count
+    instance_type     = var.training_instance_type
+    volume_size_in_gb = 30
+  }
+
+  stopping_condition {
+    max_runtime_in_seconds = 86400 # 24 hours
+  }
+
+  tags = var.tags
+}
+
+# SageMaker Training Job: Train Hitter2Vec autoencoder
+resource "aws_sagemaker_training_job" "hitter2vec" {
+  count             = 0 # Will be triggered by Lambda, placeholder for configuration
+  training_job_name = "${var.name_prefix}-hitter2vec-${formatdate("YYYY-MM-DD-hhmm", timestamp())}"
+  role_arn          = aws_iam_role.sagemaker_training.arn
+  algorithm_specification {
+    training_input_mode = "File"
+    training_image      = var.hitter2vec_training_image
+  }
+
+  input_data_config {
+    channel_name = "training"
+    data_source {
+      s3_data_source {
+        s3_data_type              = "S3Prefix"
+        s3_uri                    = "s3://${module.s3.data_lake_bucket_name}/${var.clean_data_path}"
+        s3_data_distribution_type = "FullyReplicated"
+      }
+    }
+  }
+
+  output_data_config {
+    s3_output_path = "s3://${module.s3.model_artifacts_bucket_name}/${var.training_output_path}/hitter2vec/"
   }
 
   resource_config {

@@ -125,8 +125,14 @@ variable "training_output_path" {
   default     = "training-output/"
 }
 
-variable "player2vec_training_image" {
-  description = "Docker image URI for player2vec training"
+variable "pitcher2vec_training_image" {
+  description = "Docker image URI for Pitcher2Vec training"
+  type        = string
+  default     = null
+}
+
+variable "hitter2vec_training_image" {
+  description = "Docker image URI for Hitter2Vec training"
   type        = string
   default     = null
 }

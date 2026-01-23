@@ -58,9 +58,10 @@ variable "opensearch_master_user_name" {
   default     = "admin"
 }
 
-variable "opensearch_credentials_secret_arn" {
-  description = "ARN of AWS Secrets Manager secret containing OpenSearch credentials. Secret should contain 'username' and 'password' fields."
+variable "opensearch_master_user_password" {
+  description = "Master password for OpenSearch (will be stored in Secrets Manager by the opensearch module)"
   type        = string
+  sensitive   = true
 }
 
 variable "opensearch_zone_awareness_enabled" {
@@ -190,15 +191,15 @@ variable "api_stage_name" {
 
 # DynamoDB Configuration
 variable "dynamodb_partition_key" {
-  description = "Partition key for DynamoDB table (UserID)"
+  description = "Partition key for DynamoDB table (RosterID)"
   type        = string
-  default     = "UserId"
+  default     = "RosterID"
 }
 
 variable "dynamodb_sort_key" {
-  description = "Sort key for DynamoDB table (RosterID)"
+  description = "Sort key for DynamoDB table (ItemType)"
   type        = string
-  default     = "RosterId"
+  default     = "ItemType"
 }
 
 variable "dynamodb_enable_pitr" {
@@ -220,8 +221,20 @@ variable "training_output_path" {
   default     = "training-output/"
 }
 
-variable "player2vec_training_image" {
-  description = "Docker image URI for player2vec training (optional)"
+variable "pitcher2vec_training_image" {
+  description = "Docker image URI for Pitcher2Vec training (optional)"
+  type        = string
+  default     = null
+}
+
+variable "hitter2vec_training_image" {
+  description = "Docker image URI for Hitter2Vec training (optional)"
+  type        = string
+  default     = null
+}
+
+variable "xgboost_training_image" {
+  description = "Docker image URI for XGBoost performance projector training (optional)"
   type        = string
   default     = null
 }
