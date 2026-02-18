@@ -4,7 +4,7 @@ Statcast Pitch Data Backfill Script
 
 Downloads pitch-level Statcast data from pybaseball in 5-day chunks
 (maximum allowed to keep requests together) and uploads to S3 as Parquet files,
-aggregated by year.
+partitioned by year and date.
 """
 
 import io
@@ -13,7 +13,7 @@ import argparse
 import logging
 import sys
 from datetime import datetime, timedelta
-from typing import Dict, Optional
+from typing import Optional
 
 import boto3
 import pandas as pd
@@ -125,7 +125,7 @@ def process_year_range(
     chunk_days: int = 5
 ):
     """
-    Process Statcast data for a year range, fetching in 5-day chunks and aggregating by year.
+    Process Statcast data for a year range, fetching in chunks and writing one Parquet file per day.
     
     Args:
         start_year: Start year (inclusive)
@@ -134,13 +134,9 @@ def process_year_range(
         s3_prefix: S3 prefix/path
         chunk_days: Number of days per chunk (default 5 for pybaseball)
     """
-    # Initialize data storage by year
-    year_data: Dict[int, list] = {}
-    
     # Process each year
     for year in range(start_year, end_year + 1):
         logger.info(f"Processing year {year}")
-        year_data[year] = []
         
         # Define year boundaries
         year_start = datetime(year, 1, 1)
@@ -162,23 +158,45 @@ def process_year_range(
                 # no data available for this chunk (empty dataframe)
                 logger.info(f"No statcast data for chunk {chunk_start.date()} to {chunk_end.date()}")
             else:
-                year_data[year].append(df)
-        
-        # Aggregate all chunks for this year
-        if year_data[year]:
-            logger.info(f"Aggregating {len(year_data[year])} chunks for year {year}")
-            combined_df = pd.concat(year_data[year], ignore_index=True)
-            logger.info(f"Total records for year {year}: {len(combined_df)}")
-            
-            # Upload to S3
-            s3_key = f"{s3_prefix}/year={year}/statcast_pitches.parquet"
-            upload_to_s3(combined_df, s3_bucket, s3_key)
-            
-            # Clear from memory
-            year_data[year] = []
-            del combined_df
-        else:
-            logger.warning(f"No data collected for year {year}")
+                if "game_date" not in df.columns:
+                    logger.error(
+                        "Statcast response missing required column 'game_date'. "
+                        f"Columns: {list(df.columns)}"
+                    )
+                    continue
+
+                game_dates = pd.to_datetime(df["game_date"], errors="coerce")
+                if game_dates.isna().all():
+                    logger.error(
+                        "Unable to parse any values in 'game_date' to datetimes. "
+                        "Skipping chunk upload."
+                    )
+                    continue
+
+                df = df.copy()
+                df["_partition_date"] = game_dates.dt.strftime("%Y-%m-%d")
+
+                uploaded_days = 0
+                for date_str, day_df in df.groupby("_partition_date", dropna=True):
+                    if not isinstance(date_str, str) or not date_str:
+                        continue
+
+                    # Defensive: derive year from the partition date, not the loop variable.
+                    try:
+                        date_year = datetime.strptime(date_str, "%Y-%m-%d").year
+                    except ValueError:
+                        logger.warning(f"Skipping unparseable partition date '{date_str}'")
+                        continue
+
+                    day_df = day_df.drop(columns=["_partition_date"])
+                    s3_key = f"{s3_prefix}/year={date_year}/date={date_str}/statcast_pitches.parquet"
+                    upload_to_s3(day_df, s3_bucket, s3_key)
+                    uploaded_days += 1
+
+                logger.info(
+                    f"Uploaded {uploaded_days} day partition(s) for chunk "
+                    f"{chunk_start.date()} to {chunk_end.date()}"
+                )
         
         logger.info(f"Completed processing year {year}")
 
@@ -208,8 +226,8 @@ def main():
     parser.add_argument(
         '--s3-prefix',
         type=str,
-        default='statcast',
-        help='S3 prefix/path (default: statcast)'
+        default='raw-data/statcast',
+        help='S3 prefix/path (default: raw-data/statcast)'
     )
     parser.add_argument(
         '--chunk-days',
