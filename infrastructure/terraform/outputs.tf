@@ -1,17 +1,17 @@
 # ============================================================================
-# NETWORKING OUTPUTS
+# LAMBDA OUTPUTS (Daily Statcast)
 # ============================================================================
-output "vpc_id" {
-  description = "ID of the VPC"
-  value       = module.networking.vpc_id
+output "daily_statcast_lambda_function_name" {
+  description = "Name of the daily Statcast Lambda function"
+  value       = module.lambda.lambda_function_name
 }
 
-output "public_subnet_ids" {
-  description = "IDs of the public subnets"
-  value       = module.networking.public_subnet_ids
+output "daily_statcast_lambda_function_arn" {
+  description = "ARN of the daily Statcast Lambda function"
+  value       = module.lambda.lambda_function_arn
 }
 
-output "private_subnet_ids" {
-  description = "IDs of the private subnets"
-  value       = module.networking.private_subnet_ids
+output "daily_statcast_ecr_repository_url" {
+  description = "ECR repository URL for the daily Statcast Lambda image (build and push image here, then tag as latest)"
+  value       = module.lambda.ecr_repository_url
 }

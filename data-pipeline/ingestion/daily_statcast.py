@@ -96,8 +96,8 @@ def main():
     parser.add_argument(
         '--s3-prefix',
         type=str,
-        default='raw-data/statcast',
-        help='S3 prefix/path (default: raw-data/statcast)'
+        default='statcast/pitch-level',
+        help='S3 prefix/path (default: statcast/pitch-level)'
     )
     args = parser.parse_args()
 

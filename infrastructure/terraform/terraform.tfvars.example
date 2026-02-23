@@ -1,0 +1,35 @@
+# =============================================================================
+# Diamond DNA Terraform Variables
+# =============================================================================
+# Copy this file to terraform.tfvars and set values. S3 bucket names must be
+# globally unique across all AWS accounts.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Required (no defaults)
+# -----------------------------------------------------------------------------
+data_lake_bucket_name       = "diamond-dna-raw-data-REPLACE"   # e.g. diamond-dna-raw-data-acct123-dev
+
+# -----------------------------------------------------------------------------
+# General
+# -----------------------------------------------------------------------------
+region      = "us-east-1"
+environment = "dev"
+name_prefix = "diamonddna"
+
+# Optional: extra tags applied to all resources
+tags = {
+  # Owner = "data-team"
+  # CostCenter = "diamond-dna"
+}
+
+# -----------------------------------------------------------------------------
+# Daily Statcast Lambda (used by current stack)
+# -----------------------------------------------------------------------------
+daily_statcast_s3_prefix   = "raw-data/statcast"
+daily_statcast_schedule_expression = "cron(0 6 * * ? *)"  # 6 AM UTC daily
+daily_statcast_memory_size = 1024
+daily_statcast_timeout     = 300
+daily_statcast_image_tag   = "latest"
+
+log_retention_days = 14

@@ -16,63 +16,51 @@ variable "name_prefix" {
   default     = "diamonddna"
 }
 
-variable "vpc_cidr" {
-  description = "CIDR block for the VPC"
-  type        = string
-  default     = "10.0.0.0/16"
-}
-
-variable "availability_zones" {
-  description = "Availability zones for subnets"
-  type        = list(string)
-  default     = ["us-east-1a", "us-east-1b"]
-}
-
 # S3 Configuration
 variable "data_lake_bucket_name" {
   description = "Name of the S3 bucket for raw data (must be globally unique)"
   type        = string
 }
 
-variable "model_artifacts_bucket_name" {
-  description = "Name of the S3 bucket for model artifacts (must be globally unique)"
-  type        = string
-}
-
-
-# Batch Backfill Configuration
-variable "batch_backfill_image_uri" {
-  description = "ECR container image URI for the Statcast backfill batch job"
-  type        = string
-  default     = null
-}
-
-variable "batch_backfill_start_year" {
-  description = "Start year for Statcast data backfill"
-  type        = number
-  default     = 2019
-}
-
-variable "batch_backfill_end_year" {
-  description = "End year for Statcast data backfill"
-  type        = number
-  default     = 2024
-}
-
-variable "batch_backfill_s3_prefix" {
-  description = "S3 prefix/path for storing Statcast backfill data"
+# Daily Statcast Lambda Configuration
+variable "daily_statcast_s3_prefix" {
+  description = "S3 prefix for Statcast data (same as backfill; e.g. raw-data/statcast)"
   type        = string
   default     = "raw-data/statcast"
 }
 
-variable "batch_backfill_vcpus" {
-  description = "Number of vCPUs for Batch backfill job container"
-  type        = number
-  default     = 2
+variable "daily_statcast_schedule_expression" {
+  description = "EventBridge schedule for daily Statcast ingestion (e.g. cron(0 6 * * ? *) for 6 AM UTC)"
+  type        = string
+  default     = "cron(0 6 * * ? *)"
 }
 
-variable "batch_backfill_memory" {
-  description = "Memory (in MB) for Batch backfill job container"
+variable "daily_statcast_memory_size" {
+  description = "Lambda memory size in MB for daily Statcast"
   type        = number
-  default     = 4096
+  default     = 1024
+}
+
+variable "daily_statcast_timeout" {
+  description = "Lambda timeout in seconds for daily Statcast"
+  type        = number
+  default     = 300
+}
+
+variable "daily_statcast_image_tag" {
+  description = "ECR image tag for the daily Statcast Lambda container (e.g. latest)"
+  type        = string
+  default     = "latest"
+}
+
+variable "log_retention_days" {
+  description = "CloudWatch log retention in days (used by Batch and Lambda)"
+  type        = number
+  default     = 14
+}
+
+variable "tags" {
+  description = "Tags to apply to all resources"
+  type        = map(string)
+  default     = {}
 }

@@ -3,11 +3,6 @@ variable "data_lake_bucket_name" {
   type        = string
 }
 
-variable "model_artifacts_bucket_name" {
-  description = "Name of the S3 bucket for model artifacts (must be globally unique)"
-  type        = string
-}
-
 variable "tags" {
   description = "Tags to apply to S3 buckets"
   type        = map(string)
