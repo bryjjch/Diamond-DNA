@@ -20,7 +20,7 @@ variable "s3_prefix" {
 }
 
 variable "schedule_expression" {
-  description = "EventBridge schedule expression for daily trigger (e.g. cron(0 6 * * ? *) for 6 AM UTC)"
+  description = "EventBridge schedule expression for Statcast ingestion (e.g. cron(0 6 * * ? *) for 6 AM UTC daily)"
   type        = string
   default     = "cron(0 6 * * ? *)"
 }

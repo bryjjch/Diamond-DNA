@@ -24,12 +24,12 @@ tags = {
 }
 
 # -----------------------------------------------------------------------------
-# Daily Statcast Lambda (used by current stack)
+# Statcast ingestion Lambda (daily run; same image used for backfill)
 # -----------------------------------------------------------------------------
-daily_statcast_s3_prefix   = "raw-data/statcast"
-daily_statcast_schedule_expression = "cron(0 6 * * ? *)"  # 6 AM UTC daily
-daily_statcast_memory_size = 1024
-daily_statcast_timeout     = 300
-daily_statcast_image_tag   = "latest"
+statcast_ingestion_s3_prefix             = "raw-data/statcast"
+statcast_ingestion_schedule_expression   = "cron(0 6 * * ? *)"  # 6 AM UTC daily
+statcast_ingestion_memory_size           = 1024
+statcast_ingestion_timeout               = 300
+statcast_ingestion_image_tag             = "latest"
 
 log_retention_days = 14

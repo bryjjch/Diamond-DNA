@@ -22,33 +22,33 @@ variable "data_lake_bucket_name" {
   type        = string
 }
 
-# Daily Statcast Lambda Configuration
-variable "daily_statcast_s3_prefix" {
-  description = "S3 prefix for Statcast data (same as backfill; e.g. raw-data/statcast)"
+# Statcast ingestion prefix
+variable "statcast_ingestion_s3_prefix" {
+  description = "S3 prefix for Statcast data (e.g. raw-data/statcast)"
   type        = string
   default     = "raw-data/statcast"
 }
 
-variable "daily_statcast_schedule_expression" {
-  description = "EventBridge schedule for daily Statcast ingestion (e.g. cron(0 6 * * ? *) for 6 AM UTC)"
+variable "statcast_ingestion_schedule_expression" {
+  description = "EventBridge schedule for Statcast ingestion (e.g. cron(0 6 * * ? *) for 6 AM UTC daily)"
   type        = string
   default     = "cron(0 6 * * ? *)"
 }
 
-variable "daily_statcast_memory_size" {
-  description = "Lambda memory size in MB for daily Statcast"
+variable "statcast_ingestion_memory_size" {
+  description = "Lambda memory size in MB for Statcast ingestion"
   type        = number
   default     = 1024
 }
 
-variable "daily_statcast_timeout" {
-  description = "Lambda timeout in seconds for daily Statcast"
+variable "statcast_ingestion_timeout" {
+  description = "Lambda timeout in seconds for Statcast ingestion"
   type        = number
   default     = 300
 }
 
-variable "daily_statcast_image_tag" {
-  description = "ECR image tag for the daily Statcast Lambda container (e.g. latest)"
+variable "statcast_ingestion_image_tag" {
+  description = "ECR image tag for the Statcast ingestion Lambda container (e.g. latest)"
   type        = string
   default     = "latest"
 }
