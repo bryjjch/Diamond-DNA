@@ -13,7 +13,7 @@ module "s3" {
 
   data_lake_bucket_name       = var.data_lake_bucket_name
 
-  tags = local.common_tags
+  tags = var.tags
 }
 
 
@@ -35,7 +35,7 @@ module "lambda" {
   log_retention_days    = var.log_retention_days
   image_tag             = var.statcast_ingestion_image_tag
 
-  tags = local.common_tags
+  tags = var.tags
 
   depends_on = [module.s3]
 }
