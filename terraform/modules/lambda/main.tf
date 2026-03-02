@@ -54,8 +54,7 @@ resource "aws_iam_role_policy" "s3_put" {
       {
         Effect = "Allow"
         Action = [
-          "s3:PutObject",
-          "s3:PutObjectAcl"
+          "s3:PutObject"
         ]
         Resource = "${var.data_lake_bucket_arn}/${var.s3_prefix}/*"
       }
@@ -63,7 +62,11 @@ resource "aws_iam_role_policy" "s3_put" {
   })
 }
 
-# Lambda function (container image)
+# Lambda function (container image from ECR)
+# Image must be built from repo root: docker build -f docker/statcast-ingestion/Dockerfile -t <ecr_repo_url>:<tag> .
+# Then push: aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <account>.dkr.ecr.<region>.amazonaws.com
+#            docker push <ecr_repo_url>:<tag>
+# Use statcast_ingestion_image_tag (e.g. latest) so image_uri matches.
 resource "aws_lambda_function" "statcast_ingestion" {
   function_name = "${var.name_prefix}-statcast-ingestion"
   role          = aws_iam_role.statcast_ingestion.arn
