@@ -213,8 +213,8 @@ def main() -> None:
     parser.add_argument(
         '--s3-bucket',
         type=str,
-        default='diamond-dna-raw-data',
-        help='S3 bucket name (default: diamond-dna-raw-data)'
+        default='diamond-dna',
+        help='S3 bucket name (default: diamond-dna)'
     )
     parser.add_argument(
         '--s3-prefix',
@@ -256,7 +256,7 @@ def handler(event: dict, context) -> dict:
         or os.environ.get("END_DATE")
         or yesterday
     )
-    s3_bucket = event.get("s3_bucket") or os.environ.get("S3_BUCKET", "diamond-dna-raw-data")
+    s3_bucket = event.get("s3_bucket") or os.environ.get("S3_BUCKET", "diamond-dna")
     s3_prefix = event.get("s3_prefix") or os.environ.get("S3_PREFIX", "raw-data/statcast")
 
     result = ingest_date_range(start_date, end_date, s3_bucket, s3_prefix)
