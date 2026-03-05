@@ -10,6 +10,59 @@ resource "aws_ecr_repository" "statcast_ingestion" {
   tags = var.tags
 }
 
+# IAM role for the by-player Lambda function
+resource "aws_iam_role" "statcast_by_player" {
+  name = "${var.name_prefix}-statcast-by-player-lambda"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = var.tags
+}
+
+# Basic Lambda execution for by-player: CloudWatch Logs
+resource "aws_iam_role_policy_attachment" "by_player_lambda_basic" {
+  role       = aws_iam_role.statcast_by_player.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+# S3 access for by-player Lambda: read raw, read/write processed
+resource "aws_iam_role_policy" "by_player_s3_access" {
+  name = "${var.name_prefix}-statcast-by-player-s3"
+  role = aws_iam_role.statcast_by_player.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject"
+        ]
+        Resource = "${var.data_lake_bucket_arn}/${var.s3_prefix}/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject"
+        ]
+        Resource = "${var.data_lake_bucket_arn}/${var.processed_s3_prefix}/*"
+      }
+    ]
+  })
+}
+
 # CloudWatch log group for the Lambda
 resource "aws_cloudwatch_log_group" "statcast_ingestion" {
   name              = "/aws/lambda/${var.name_prefix}-statcast-ingestion"
@@ -90,6 +143,32 @@ resource "aws_lambda_function" "statcast_ingestion" {
   tags = var.tags
 }
 
+# By-player Lambda function (reuses the same container image)
+resource "aws_lambda_function" "statcast_by_player" {
+  function_name = "${var.name_prefix}-statcast-by-player"
+  role          = aws_iam_role.statcast_by_player.arn
+  package_type  = "Image"
+  image_uri     = "${aws_ecr_repository.statcast_ingestion.repository_url}:${var.image_tag}"
+
+  memory_size = var.by_player_memory_size
+  timeout     = var.by_player_timeout
+
+  environment {
+    variables = {
+      S3_BUCKET        = var.data_lake_bucket_name
+      RAW_PREFIX       = var.s3_prefix
+      PROCESSED_PREFIX = var.processed_s3_prefix
+      ROLE             = "pitcher"
+    }
+  }
+
+  depends_on = [
+    aws_cloudwatch_log_group.statcast_ingestion
+  ]
+
+  tags = var.tags
+}
+
 # EventBridge rule to run daily
 resource "aws_cloudwatch_event_rule" "statcast_ingestion" {
   name                = "${var.name_prefix}-statcast-ingestion-schedule"
@@ -112,4 +191,28 @@ resource "aws_lambda_permission" "eventbridge" {
   function_name = aws_lambda_function.statcast_ingestion.function_name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.statcast_ingestion.arn
+}
+
+# EventBridge rule to run by-player build daily (optionally offset in time)
+resource "aws_cloudwatch_event_rule" "statcast_by_player" {
+  name                = "${var.name_prefix}-statcast-by-player-schedule"
+  description         = "Trigger Statcast by-player build (daily run: yesterday's data)"
+  schedule_expression = var.by_player_schedule_expression
+  tags                = var.tags
+}
+
+# Target the by-player Lambda
+resource "aws_cloudwatch_event_target" "statcast_by_player" {
+  rule      = aws_cloudwatch_event_rule.statcast_by_player.name
+  target_id = "StatcastByPlayerLambda"
+  arn       = aws_lambda_function.statcast_by_player.arn
+}
+
+# Allow EventBridge to invoke the by-player Lambda
+resource "aws_lambda_permission" "by_player_eventbridge" {
+  statement_id  = "AllowExecutionFromEventBridgeByPlayer"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.statcast_by_player.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.statcast_by_player.arn
 }
