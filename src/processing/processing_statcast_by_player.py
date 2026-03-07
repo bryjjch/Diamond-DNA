@@ -6,9 +6,14 @@ Reads daily raw Parquet files from S3 at:
   {raw_prefix}/year=Y/date=YYYY-MM-DD/statcast_pitches.parquet
 
 and writes/updates per-player Parquet files at:
-  {processed_prefix}/{role}_id=<id>/year=Y/data.parquet
+  {processed_prefix}/{role}_id=<id>/year=Y/statcast_pitches.parquet
 
 where role is either "pitcher" or "batter".
+
+Before splitting by player, the pipeline enriches each row with player name columns
+via pybaseball's playerid_reverse_lookup (MLBAM IDs): batter_name, pitcher_name,
+fielder_2_name, fielder_3_name, ... fielder_9_name. Requires pybaseball; if not
+installed, name columns are skipped with a warning.
 """
 
 import argparse
@@ -16,12 +21,28 @@ import io
 import logging
 import os
 from datetime import date, datetime, timedelta, timezone
-from typing import Dict, Iterable, Literal, Optional
+from typing import Dict, Iterable, List, Literal, Optional, Set
 
 import boto3
 import pandas as pd
+from pybaseball import playerid_reverse_lookup
 
 Role = Literal["pitcher", "batter"]
+
+# Statcast ID columns for batter, pitcher, and fielders (positions 2–9). Name columns will be *_name.
+PLAYER_ID_COLUMNS = [
+    "batter",
+    "pitcher",
+    "fielder_2",
+    "fielder_3",
+    "fielder_4",
+    "fielder_5",
+    "fielder_6",
+    "fielder_7",
+    "fielder_8",
+    "fielder_9",
+]
+LOOKUP_BATCH_SIZE = 200
 
 logging.basicConfig(
     level=logging.INFO,
@@ -76,6 +97,82 @@ def _date_range(start: date, end: date) -> Iterable[date]:
     while current <= end:
         yield current
         current += timedelta(days=1)
+
+
+def _collect_unique_player_ids(df: pd.DataFrame) -> Set[int]:
+    """Collect all unique non-null player IDs from batter, pitcher, and fielder columns."""
+    ids: Set[int] = set()
+    for col in PLAYER_ID_COLUMNS:
+        if col not in df.columns:
+            continue
+        for val in df[col].dropna().unique():
+            try:
+                ids.add(int(val))
+            except (ValueError, TypeError):
+                pass
+    return ids
+
+
+def _lookup_player_names(player_ids: List[int], batch_size: int = LOOKUP_BATCH_SIZE) -> Dict[int, str]:
+    """
+    Resolve MLBAM player IDs to display names (Last, First) via pybaseball.
+    Returns a dict mapping player_id -> "Last, First". Missing IDs are omitted.
+    """
+    if not player_ids:
+        return {}
+    id_to_name: Dict[int, str] = {}
+    for i in range(0, len(player_ids), batch_size):
+        batch = player_ids[i : i + batch_size]
+        try:
+            lookup_df = playerid_reverse_lookup(batch, key_type="mlbam")
+        except Exception as exc:
+            logger.warning("playerid_reverse_lookup failed for batch: %s", exc)
+            continue
+        if lookup_df is None or lookup_df.empty:
+            continue
+        for _, row in lookup_df.iterrows():
+            raw_id = row.get("key_mlbam")
+            if raw_id is None or pd.isna(raw_id):
+                continue
+            try:
+                pid = int(raw_id)
+            except (ValueError, TypeError):
+                continue
+            first = row.get("name_first") or ""
+            last = row.get("name_last") or ""
+            name = f"{last}, {first}".strip(", ") if (first or last) else ""
+            if name:
+                id_to_name[pid] = name
+    return id_to_name
+
+
+def _add_player_name_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add batter_name, pitcher_name, fielder_2_name, ... fielder_9_name using
+    pybaseball playerid_reverse_lookup. Only adds columns for ID columns present.
+    """
+    present_id_cols = [c for c in PLAYER_ID_COLUMNS if c in df.columns]
+    if not present_id_cols:
+        return df
+    unique_ids = _collect_unique_player_ids(df)
+    if not unique_ids:
+        return df
+    logger.info("Resolving names for %d unique player IDs", len(unique_ids))
+    id_to_name = _lookup_player_names(list(unique_ids))
+    logger.info("Resolved %d player names", len(id_to_name))
+    def safe_lookup(x: object) -> Optional[str]:
+        if pd.isna(x):
+            return None
+        try:
+            return id_to_name.get(int(x), None)
+        except (ValueError, TypeError):
+            return None
+
+    out = df.copy()
+    for id_col in present_id_cols:
+        name_col = f"{id_col}_name"
+        out[name_col] = out[id_col].apply(safe_lookup)
+    return out
 
 
 def build_by_player_layer(
@@ -174,6 +271,8 @@ def build_by_player_layer(
             "players_updated": 0,
             "rows_written": 0,
         }
+
+    full_raw = _add_player_name_columns(full_raw)
 
     players_updated = 0
     rows_written = 0
