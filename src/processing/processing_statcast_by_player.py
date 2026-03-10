@@ -381,9 +381,13 @@ def main() -> None:
         role=args.role,  # type: ignore[arg-type]
     )
 
-    if result["status"] != "ok":
+    if result["status"] == "error":
         logger.error(result["message"])
         raise SystemExit(1)
+    if result["status"] == "no_data":
+        logger.warning(result["message"])
+        # Exit 0 so scheduled runs (e.g. off-season) do not fail
+    # status == "ok": exit 0
 
 
 def handler(event: Dict[str, object], context) -> Dict[str, object]:
@@ -439,7 +443,7 @@ def handler(event: Dict[str, object], context) -> Dict[str, object]:
         role=role_value,  # type: ignore[arg-type]
     )
 
-    status_code = 200 if result.get("status") == "ok" else 400
+    status_code = 200 if result.get("status") in ("ok", "no_data") else 400
     return {
         "statusCode": status_code,
         "body": result.get("message", ""),

@@ -32,4 +32,13 @@ statcast_ingestion_memory_size           = 1024
 statcast_ingestion_timeout               = 300
 statcast_ingestion_image_tag             = "latest"
 
+# -----------------------------------------------------------------------------
+# Statcast by-player Lambda (daily run; builds by-player layer from raw)
+# -----------------------------------------------------------------------------
+statcast_processed_s3_prefix             = "processed/statcast"
+statcast_by_player_schedule_expression   = "cron(15 6 * * ? *)"  # 6:15 AM UTC daily
+statcast_by_player_memory_size           = 1024
+statcast_by_player_timeout               = 900
+statcast_by_player_image_tag             = "latest"
+
 log_retention_days = 14

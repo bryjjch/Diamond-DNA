@@ -10,6 +10,18 @@ resource "aws_ecr_repository" "statcast_ingestion" {
   tags = var.tags
 }
 
+# ECR repository for the Statcast by-player processing Lambda container image
+resource "aws_ecr_repository" "statcast_by_player" {
+  name                 = "${var.name_prefix}-statcast-by-player"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = var.tags
+}
+
 # IAM role for the by-player Lambda function
 resource "aws_iam_role" "statcast_by_player" {
   name = "${var.name_prefix}-statcast-by-player-lambda"
@@ -63,9 +75,16 @@ resource "aws_iam_role_policy" "by_player_s3_access" {
   })
 }
 
-# CloudWatch log group for the Lambda
+# CloudWatch log group for the ingestion Lambda
 resource "aws_cloudwatch_log_group" "statcast_ingestion" {
   name              = "/aws/lambda/${var.name_prefix}-statcast-ingestion"
+  retention_in_days = var.log_retention_days
+  tags              = var.tags
+}
+
+# CloudWatch log group for the by-player Lambda
+resource "aws_cloudwatch_log_group" "statcast_by_player" {
+  name              = "/aws/lambda/${var.name_prefix}-statcast-by-player"
   retention_in_days = var.log_retention_days
   tags              = var.tags
 }
@@ -116,7 +135,8 @@ resource "aws_iam_role_policy" "s3_put" {
 }
 
 # Lambda function (container image from ECR)
-# Image must be built from repo root: docker build -f docker/statcast-ingestion/Dockerfile -t <ecr_repo_url>:<tag> .
+# Image must be built from repo root: docker build --platform linux/amd64 --provenance=false -f docker/statcast-ingestion/Dockerfile -t <ecr_repo_url>:<tag> .
+# (must use provenance=false for a compatible lambda image)
 # Then push: aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <account>.dkr.ecr.<region>.amazonaws.com
 #            docker push <ecr_repo_url>:<tag>
 # Use statcast_ingestion_image_tag (e.g. latest) so image_uri matches.
@@ -143,12 +163,12 @@ resource "aws_lambda_function" "statcast_ingestion" {
   tags = var.tags
 }
 
-# By-player Lambda function (reuses the same container image)
+# By-player Lambda function (own container image: processing_statcast_by_player)
 resource "aws_lambda_function" "statcast_by_player" {
   function_name = "${var.name_prefix}-statcast-by-player"
   role          = aws_iam_role.statcast_by_player.arn
   package_type  = "Image"
-  image_uri     = "${aws_ecr_repository.statcast_ingestion.repository_url}:${var.image_tag}"
+  image_uri     = "${aws_ecr_repository.statcast_by_player.repository_url}:${var.by_player_image_tag}"
 
   memory_size = var.by_player_memory_size
   timeout     = var.by_player_timeout
@@ -163,7 +183,7 @@ resource "aws_lambda_function" "statcast_by_player" {
   }
 
   depends_on = [
-    aws_cloudwatch_log_group.statcast_ingestion
+    aws_cloudwatch_log_group.statcast_by_player
   ]
 
   tags = var.tags

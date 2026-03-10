@@ -18,26 +18,28 @@ module "s3" {
 
 
 # ============================================================================
-# LAMBDA MODULE (Statcast ingestion)
+# LAMBDA MODULE (Statcast ingestion + by-player processing)
 # ============================================================================
-# Lambda triggered daily by EventBridge; runs statcast_ingestion (start/end = yesterday).
-# Same container image can be used for backfill with a date range.
+# Two Lambdas, each with its own container image:
+# - statcast-ingestion: runs statcast_ingestion.py (daily EventBridge; backfill via date range).
+# - statcast-by-player: runs processing_statcast_by_player.py (daily EventBridge; builds by-player layer).
 module "lambda" {
   source = "./modules/lambda"
 
-  name_prefix           = var.name_prefix
-  data_lake_bucket_name = module.s3.data_lake_bucket_name
-  data_lake_bucket_arn  = module.s3.data_lake_bucket_arn
-  s3_prefix             = var.statcast_ingestion_s3_prefix
-  processed_s3_prefix   = var.statcast_processed_s3_prefix
-  schedule_expression   = var.statcast_ingestion_schedule_expression
-  by_player_schedule_expression = var.statcast_by_player_schedule_expression
-  memory_size           = var.statcast_ingestion_memory_size
-  timeout               = var.statcast_ingestion_timeout
-  by_player_memory_size = var.statcast_by_player_memory_size
-  by_player_timeout     = var.statcast_by_player_timeout
-  log_retention_days    = var.log_retention_days
-  image_tag             = var.statcast_ingestion_image_tag
+  name_prefix                    = var.name_prefix
+  data_lake_bucket_name          = module.s3.data_lake_bucket_name
+  data_lake_bucket_arn           = module.s3.data_lake_bucket_arn
+  s3_prefix                      = var.statcast_ingestion_s3_prefix
+  processed_s3_prefix            = var.statcast_processed_s3_prefix
+  schedule_expression            = var.statcast_ingestion_schedule_expression
+  by_player_schedule_expression  = var.statcast_by_player_schedule_expression
+  memory_size                    = var.statcast_ingestion_memory_size
+  timeout                        = var.statcast_ingestion_timeout
+  by_player_memory_size          = var.statcast_by_player_memory_size
+  by_player_timeout              = var.statcast_by_player_timeout
+  log_retention_days             = var.log_retention_days
+  image_tag                      = var.statcast_ingestion_image_tag
+  by_player_image_tag            = var.statcast_by_player_image_tag
 
   tags = var.tags
 

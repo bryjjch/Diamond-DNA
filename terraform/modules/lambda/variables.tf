@@ -68,7 +68,13 @@ variable "log_retention_days" {
 }
 
 variable "image_tag" {
-  description = "Tag of the container image in the module's ECR repository (e.g. latest)"
+  description = "Tag of the Statcast ingestion container image in ECR (e.g. latest)"
+  type        = string
+  default     = "latest"
+}
+
+variable "by_player_image_tag" {
+  description = "Tag of the Statcast by-player container image in ECR (e.g. latest)"
   type        = string
   default     = "latest"
 }

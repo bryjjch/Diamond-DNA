@@ -77,6 +77,12 @@ variable "statcast_ingestion_image_tag" {
   default     = "latest"
 }
 
+variable "statcast_by_player_image_tag" {
+  description = "ECR image tag for the Statcast by-player Lambda container (e.g. latest)"
+  type        = string
+  default     = "latest"
+}
+
 variable "log_retention_days" {
   description = "CloudWatch log retention in days (used by Batch and Lambda)"
   type        = number
