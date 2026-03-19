@@ -6,7 +6,7 @@ Reads daily raw Parquet files from S3 at:
   {raw_prefix}/year=Y/date=YYYY-MM-DD/statcast_pitches.parquet
 
 and writes/updates per-player Parquet files at:
-  {processed_prefix}/{role}_id=<id>/year=Y/statcast_pitches.parquet
+  {processed_prefix}/{role}/{role}_id=<id>/year=Y/statcast_pitches.parquet
 
 where role is either "pitcher" or "batter".
 
@@ -62,7 +62,7 @@ def _build_raw_key(prefix: str, d: date) -> str:
 
 
 def _build_processed_key(prefix: str, role: Role, player_id: int, year: int) -> str:
-    return f"{prefix}/{role}_id={player_id}/year={year}/statcast_pitches.parquet"
+    return f"{prefix}/{role}/{role}_id={player_id}/year={year}/statcast_pitches.parquet"
 
 
 def _read_parquet_from_s3(bucket: str, key: str) -> Optional[pd.DataFrame]:
@@ -182,7 +182,6 @@ def build_by_player_layer(
     s3_bucket: str,
     raw_prefix: str,
     processed_prefix: str,
-    role: Role = "pitcher",
 ) -> Dict[str, object]:
     """
     Build / update the by-player processed layer for all days in [start_date_str, end_date_str].
@@ -211,10 +210,9 @@ def build_by_player_layer(
         }
 
     logger.info(
-        "Building by-player layer from %s to %s (role=%s, raw_prefix=%s, processed_prefix=%s)",
+        "Building by-player layer from %s to %s (roles=pitcher,batter, raw_prefix=%s, processed_prefix=%s)",
         start_date_str,
         end_date_str,
-        role,
         raw_prefix,
         processed_prefix,
     )
@@ -250,8 +248,9 @@ def build_by_player_layer(
 
     full_raw = pd.concat(combined_raw, ignore_index=True)
 
-    if role not in full_raw.columns:
-        msg = f"Column '{role}' not found in raw data"
+    missing_roles = [r for r in ("pitcher", "batter") if r not in full_raw.columns]
+    if missing_roles:
+        msg = f"Column(s) not found in raw data: {', '.join(missing_roles)}"
         logger.error(msg)
         return {
             "status": "error",
@@ -276,39 +275,46 @@ def build_by_player_layer(
 
     players_updated = 0
     rows_written = 0
+    players_updated_by_role: Dict[str, int] = {"pitcher": 0, "batter": 0}
+    rows_written_by_role: Dict[str, int] = {"pitcher": 0, "batter": 0}
 
-    for player_id, player_df in full_raw.groupby(role):
-        if pd.isna(player_id):
-            continue
-        players_updated += 1
+    for role in ("pitcher", "batter"):
+        for player_id, player_df in full_raw.groupby(role):
+            if pd.isna(player_id):
+                continue
+            players_updated += 1
+            players_updated_by_role[role] += 1
 
-        player_df = player_df.copy()
-        player_df["year"] = pd.to_datetime(player_df["game_date"]).dt.year
-        
-        for year, df_year in player_df.groupby("year"):
-            target_key = _build_processed_key(processed_prefix, role, int(player_id), int(year))
-            existing_df = _read_parquet_from_s3(s3_bucket, target_key)
+            player_df = player_df.copy()
+            player_df["year"] = pd.to_datetime(player_df["game_date"]).dt.year
 
-            if existing_df is not None and not existing_df.empty:
-                combined = pd.concat([existing_df, df_year], ignore_index=True)
-                dedup_cols = []
-                for col in ("game_pk", "pitch_number", "at_bat_number"):
-                    if col in combined.columns:
-                        dedup_cols.append(col)
-                if dedup_cols:
-                    combined = combined.drop_duplicates(subset=dedup_cols, keep="last")
-                df_to_write = combined
-            else:
-                df_to_write = df_year
+            for year, df_year in player_df.groupby("year"):
+                target_key = _build_processed_key(processed_prefix, role, int(player_id), int(year))
+                existing_df = _read_parquet_from_s3(s3_bucket, target_key)
 
-            _write_parquet_to_s3(df_to_write, s3_bucket, target_key)
-            rows_written += len(df_to_write)
+                if existing_df is not None and not existing_df.empty:
+                    combined = pd.concat([existing_df, df_year], ignore_index=True)
+                    dedup_cols = []
+                    for col in ("game_pk", "pitch_number", "at_bat_number"):
+                        if col in combined.columns:
+                            dedup_cols.append(col)
+                    if dedup_cols:
+                        combined = combined.drop_duplicates(subset=dedup_cols, keep="last")
+                    df_to_write = combined
+                else:
+                    df_to_write = df_year
+
+                _write_parquet_to_s3(df_to_write, s3_bucket, target_key)
+                rows_written += len(df_to_write)
+                rows_written_by_role[role] += len(df_to_write)
 
     status = "ok"
     message = (
         f"Built by-player layer for {start_date_str} to {end_date_str}: "
-        f"{days_with_data} days with data, {players_updated} players updated, "
-        f"{rows_written} rows written"
+        f"{days_with_data} days with data, {players_updated} players updated "
+        f"(pitcher={players_updated_by_role['pitcher']}, batter={players_updated_by_role['batter']}), "
+        f"{rows_written} rows written "
+        f"(pitcher={rows_written_by_role['pitcher']}, batter={rows_written_by_role['batter']})"
     )
 
     logger.info(message)
@@ -329,7 +335,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
             "Build by-player Statcast layer from raw daily files. "
-            "Reads raw-data/statcast by default and writes processed/statcast."
+            "Reads raw-data/statcast by default and writes processed/statcast "
+            "for both pitcher and batter roles."
         )
     )
     parser.add_argument(
@@ -362,14 +369,6 @@ def main() -> None:
         default=os.environ.get("PROCESSED_PREFIX", "processed/statcast"),
         help="Processed S3 prefix/path (default: processed/statcast).",
     )
-    parser.add_argument(
-        "--role",
-        type=str,
-        choices=["pitcher", "batter"],
-        default=os.environ.get("ROLE", "pitcher"),
-        help="Which player role to build (pitcher or batter). Default: pitcher.",
-    )
-
     args = parser.parse_args()
 
     result = build_by_player_layer(
@@ -378,7 +377,6 @@ def main() -> None:
         s3_bucket=args.s3_bucket,
         raw_prefix=args.raw_prefix,
         processed_prefix=args.processed_prefix,
-        role=args.role,  # type: ignore[arg-type]
     )
 
     if result["status"] == "error":
@@ -425,22 +423,12 @@ def handler(event: Dict[str, object], context) -> Dict[str, object]:
         else None
     ) or os.environ.get("PROCESSED_PREFIX", "processed/statcast")
 
-    role_value = (
-        event.get("role")
-        if isinstance(event, dict)
-        else None
-    ) or os.environ.get("ROLE", "pitcher")
-
-    if role_value not in ("pitcher", "batter"):
-        role_value = "pitcher"
-
     result = build_by_player_layer(
         str(start_date),
         str(end_date),
         s3_bucket=str(bucket),
         raw_prefix=str(raw_prefix),
         processed_prefix=str(processed_prefix),
-        role=role_value,  # type: ignore[arg-type]
     )
 
     status_code = 200 if result.get("status") in ("ok", "no_data") else 400

@@ -178,7 +178,6 @@ resource "aws_lambda_function" "statcast_by_player" {
       S3_BUCKET        = var.data_lake_bucket_name
       RAW_PREFIX       = var.s3_prefix
       PROCESSED_PREFIX = var.processed_s3_prefix
-      ROLE             = "pitcher"
     }
   }
 
