@@ -17,15 +17,21 @@ installed, name columns are skipped with a warning.
 """
 
 import argparse
-import io
 import logging
 import os
+import sys
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from typing import Dict, Iterable, List, Literal, Optional, Set
 
-import boto3
 import pandas as pd
 from pybaseball import playerid_reverse_lookup
+
+try:
+    from s3_parquet import read_parquet_from_s3, write_parquet_to_s3
+except ImportError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from s3_parquet import read_parquet_from_s3, write_parquet_to_s3
 
 Role = Literal["pitcher", "batter"]
 
@@ -50,8 +56,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-s3_client = boto3.client("s3")
-
 
 def _parse_date(value: str) -> date:
     return datetime.strptime(value, "%Y-%m-%d").date()
@@ -63,33 +67,6 @@ def _build_raw_key(prefix: str, d: date) -> str:
 
 def _build_processed_key(prefix: str, role: Role, player_id: int, year: int) -> str:
     return f"{prefix}/{role}/{role}_id={player_id}/year={year}/statcast_pitches.parquet"
-
-
-def _read_parquet_from_s3(bucket: str, key: str) -> Optional[pd.DataFrame]:
-    try:
-        logger.info("Reading s3://%s/%s", bucket, key)
-        obj = s3_client.get_object(Bucket=bucket, Key=key)
-        body = obj["Body"].read()
-        return pd.read_parquet(io.BytesIO(body))
-    except s3_client.exceptions.NoSuchKey:
-        logger.info("No existing object at s3://%s/%s (treat as empty)", bucket, key)
-        return None
-    except Exception as exc:
-        logger.error("Error reading s3://%s/%s: %s", bucket, key, exc)
-        raise
-
-
-def _write_parquet_to_s3(df: pd.DataFrame, bucket: str, key: str) -> None:
-    logger.info("Writing %d rows to s3://%s/%s", len(df), bucket, key)
-    buf = io.BytesIO()
-    df.to_parquet(buf, engine="pyarrow", index=False, compression="snappy")
-    buf.seek(0)
-    s3_client.put_object(
-        Bucket=bucket,
-        Key=key,
-        Body=buf.getvalue(),
-        ContentType="application/x-parquet",
-    )
 
 
 def _date_range(start: date, end: date) -> Iterable[date]:
@@ -222,11 +199,7 @@ def build_by_player_layer(
 
     for d in _date_range(start, end):
         key = _build_raw_key(raw_prefix, d)
-        try:
-            df = _read_parquet_from_s3(s3_bucket, key)
-        except s3_client.exceptions.NoSuchKey:
-            logger.warning("Raw file missing for %s at %s", d, key)
-            continue
+        df = read_parquet_from_s3(s3_bucket, key)
         if df is None or df.empty:
             logger.info("No rows for %s (empty DataFrame)", d)
             continue
@@ -290,7 +263,7 @@ def build_by_player_layer(
 
             for year, df_year in player_df.groupby("year"):
                 target_key = _build_processed_key(processed_prefix, role, int(player_id), int(year))
-                existing_df = _read_parquet_from_s3(s3_bucket, target_key)
+                existing_df = read_parquet_from_s3(s3_bucket, target_key)
 
                 if existing_df is not None and not existing_df.empty:
                     combined = pd.concat([existing_df, df_year], ignore_index=True)
@@ -304,7 +277,7 @@ def build_by_player_layer(
                 else:
                     df_to_write = df_year
 
-                _write_parquet_to_s3(df_to_write, s3_bucket, target_key)
+                write_parquet_to_s3(df_to_write, s3_bucket, target_key)
                 rows_written += len(df_to_write)
                 rows_written_by_role[role] += len(df_to_write)
 

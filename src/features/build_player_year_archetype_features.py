@@ -12,16 +12,22 @@ Writes:
 from __future__ import annotations
 
 import argparse
-import io
 import logging
 import os
 import re
+import sys
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
-import boto3
 import numpy as np
 import pandas as pd
+
+try:
+    from s3_parquet import get_s3_client, read_parquet_from_s3, write_parquet_to_s3
+except ImportError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from s3_parquet import get_s3_client, read_parquet_from_s3, write_parquet_to_s3
 
 from archetype_feature_defs import (
     DEFAULT_BARREL_DEF,
@@ -35,32 +41,6 @@ from archetype_feature_defs import (
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
-
-s3_client = boto3.client("s3")
-
-
-def _read_parquet_from_s3(bucket: str, key: str) -> Optional[pd.DataFrame]:
-    """Read a Parquet object from S3 as a DataFrame."""
-    try:
-        obj = s3_client.get_object(Bucket=bucket, Key=key)
-        body = obj["Body"].read()
-        return pd.read_parquet(io.BytesIO(body))
-    except s3_client.exceptions.NoSuchKey:
-        logger.warning("No such parquet at s3://%s/%s", bucket, key)
-        return None
-
-
-def _write_parquet_to_s3(df: pd.DataFrame, bucket: str, key: str) -> None:
-    """Write DataFrame to S3 Parquet."""
-    buf = io.BytesIO()
-    df.to_parquet(buf, engine="pyarrow", index=False, compression="snappy")
-    buf.seek(0)
-    s3_client.put_object(
-        Bucket=bucket,
-        Key=key,
-        Body=buf.getvalue(),
-        ContentType="application/x-parquet",
-    )
 
 
 def _list_player_year_keys(
@@ -85,7 +65,7 @@ def _list_player_year_keys(
     )
 
     out: List[Tuple[int, int, str]] = []
-    paginator = s3_client.get_paginator("list_objects_v2")
+    paginator = get_s3_client().get_paginator("list_objects_v2")
     for page in paginator.paginate(Bucket=bucket, Prefix=list_prefix):
         for obj in page.get("Contents", []) or []:
             key = obj.get("Key")
@@ -324,7 +304,7 @@ def build_features(
         if (i % 50) == 0:
             logger.info("Processing %d/%d: player_id=%d year=%d", i + 1, len(keys), player_id, year)
 
-        df = _read_parquet_from_s3(bucket, key)
+        df = read_parquet_from_s3(bucket, key, log_read=False, missing_key_log="warning")
         if df is None or df.empty:
             logger.warning("Empty parquet for player_id=%d year=%d (%s)", player_id, year, key)
             continue
@@ -394,7 +374,7 @@ def build_features(
             continue
         out_key = f"{feature_prefix}/role={role}/year={year}/player_year_features.parquet"
         logger.info("Writing %d feature rows to s3://%s/%s", len(df_year), bucket, out_key)
-        _write_parquet_to_s3(df_year, bucket, out_key)
+        write_parquet_to_s3(df_year, bucket, out_key, log_write=False)
 
 
 def main() -> None:

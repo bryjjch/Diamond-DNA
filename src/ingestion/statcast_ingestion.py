@@ -8,18 +8,23 @@ and uploads each day to S3 as Parquet at {s3_prefix}/year=Y/date=D/statcast_pitc
 Use for both daily (start_date = end_date = yesterday) and backfill (larger range).
 """
 
-import io
-import os
-import time
 import argparse
 import logging
+import os
 import sys
+import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional
 
-import boto3
 import pandas as pd
 from pybaseball import statcast
+
+try:
+    from s3_parquet import write_parquet_to_s3
+except ImportError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from s3_parquet import write_parquet_to_s3
 
 # Configure logging
 logging.basicConfig(
@@ -27,9 +32,6 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-# S3 client (credentials from IAM role in Batch/Lambda or env)
-s3_client = boto3.client('s3')
 
 
 def fetch_statcast_data(start_date: datetime, end_date: datetime, max_retries: int = 3) -> Optional[pd.DataFrame]:
@@ -62,21 +64,6 @@ def fetch_statcast_data(start_date: datetime, end_date: datetime, max_retries: i
                 return None
 
     return None
-
-
-def upload_to_s3(df: pd.DataFrame, bucket: str, key: str) -> None:
-    """Upload DataFrame to S3 as Parquet file."""
-    logger.info(f"Uploading {len(df)} records to s3://{bucket}/{key}")
-    parquet_buffer = io.BytesIO()
-    df.to_parquet(parquet_buffer, engine='pyarrow', index=False, compression='snappy')
-    parquet_buffer.seek(0)
-    s3_client.put_object(
-        Bucket=bucket,
-        Key=key,
-        Body=parquet_buffer.getvalue(),
-        ContentType='application/x-parquet'
-    )
-    logger.info(f"Successfully uploaded to s3://{bucket}/{key}")
 
 
 def fetch_pitch_data_for_date(date_str: str, s3_bucket: str, s3_prefix: str) -> dict:
@@ -116,7 +103,9 @@ def fetch_pitch_data_for_date(date_str: str, s3_bucket: str, s3_prefix: str) -> 
 
     year = ingest_date.year
     s3_key = f"{s3_prefix}/year={year}/date={date_str}/statcast_pitches.parquet"
-    upload_to_s3(df, s3_bucket, s3_key)
+    logger.info(f"Uploading {len(df)} records to s3://{s3_bucket}/{s3_key}")
+    write_parquet_to_s3(df, s3_bucket, s3_key, log_write=False)
+    logger.info(f"Successfully uploaded to s3://{s3_bucket}/{s3_key}")
     return {"status": "ok", "message": "OK", "records": len(df)}
 
 
