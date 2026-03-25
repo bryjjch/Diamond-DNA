@@ -27,11 +27,7 @@ from typing import Dict, Iterable, List, Literal, Optional, Set
 import pandas as pd
 from pybaseball import playerid_reverse_lookup
 
-try:
-    from s3_parquet import read_parquet_from_s3, write_parquet_to_s3
-except ImportError:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from s3_parquet import read_parquet_from_s3, write_parquet_to_s3
+from s3_parquet import read_parquet_from_s3, write_parquet_to_s3
 
 Role = Literal["pitcher", "batter"]
 

@@ -23,11 +23,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-try:
-    from s3_parquet import get_s3_client, read_parquet_from_s3, write_parquet_to_s3
-except ImportError:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from s3_parquet import get_s3_client, read_parquet_from_s3, write_parquet_to_s3
+from s3_parquet import get_s3_client, read_parquet_from_s3, write_parquet_to_s3
 
 from archetype_feature_defs import (
     DEFAULT_BARREL_DEF,

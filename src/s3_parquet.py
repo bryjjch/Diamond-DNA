@@ -4,18 +4,22 @@ from __future__ import annotations
 
 import io
 import logging
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 import boto3
 import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+_s3_client: Optional[Any] = None
 
-def get_s3_client():
-    """Boto3 S3 client (credentials from env / IAM role)."""
-    s3_client = boto3.client("s3")
-    return s3_client
+
+def get_s3_client() -> Any:
+    """Return a shared Boto3 S3 client (credentials from env / IAM role)."""
+    global _s3_client
+    if _s3_client is None:
+        _s3_client = boto3.client("s3")
+    return _s3_client
 
 
 def read_parquet_from_s3(
