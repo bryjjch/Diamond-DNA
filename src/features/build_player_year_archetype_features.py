@@ -147,7 +147,7 @@ def _player_year_features_from_df(
         if missing:
             raise ValueError(f"Pitcher parquet missing required columns: {missing}")
 
-        delta_col = "delta_pitcher_run_exp"
+        delta_col = "delta_run_exp"
         if delta_col not in df.columns:
             logger.warning("Missing `%s`; setting run value stats to NA.", delta_col)
             delta_mean = float("nan")
@@ -177,7 +177,7 @@ def _player_year_features_from_df(
                 "plate_x_sd": _nan_std(df["plate_x"]),
                 "plate_z_mean": _nan_mean(df["plate_z"]),
                 "plate_z_sd": _nan_std(df["plate_z"]),
-                "delta_pitcher_run_exp_mean": delta_mean,
+                "delta_run_exp_mean": delta_mean,
             }
         )
 
@@ -244,7 +244,7 @@ def _player_year_features_from_df(
 
 
 def _validate_feature_row(row: Dict[str, object], *, role: str) -> None:
-    """Lightweight sanity checks to catch broken derived flags."""
+    """Checks to catch broken derived flags."""
     required_rates = ["swing_rate", "zone_swing_rate", "chase_rate", "contact_rate", "whiff_rate"]
     pitcher_rates = ["batter_swing_rate", "batter_zone_swing_rate", "batter_chase_rate", "batter_contact_rate", "batter_whiff_rate"]
 
@@ -279,7 +279,6 @@ def build_features(
     min_pitches_batter: int,
     min_batted_ball_batter: int,
     hard_hit_speed_mph: float,
-    audit_sample_player_years_per_role_year: int,
 ) -> None:
     keys = _list_player_year_keys(
         bucket=bucket,
@@ -292,9 +291,6 @@ def build_features(
         logger.warning("No parquet objects found for role=%s in years [%d..%d]", role, start_year, end_year)
         return
 
-    # One-time per role/year audit logs.
-    audited_years: Dict[int, int] = {}
-
     feature_rows: List[Dict[str, object]] = []
     for i, (player_id, year, key) in enumerate(keys):
         if (i % 50) == 0:
@@ -304,43 +300,6 @@ def build_features(
         if df is None or df.empty:
             logger.warning("Empty parquet for player_id=%d year=%d (%s)", player_id, year, key)
             continue
-
-        # Derived-flag audit logs (top description/events that drive swing/chase).
-        if audited_years.get(year, 0) < audit_sample_player_years_per_role_year:
-            desc_counts = df["description"].value_counts(dropna=True).head(15) if "description" in df.columns else None
-            events_counts = df["events"].value_counts(dropna=True).head(15) if "events" in df.columns else None
-
-            if desc_counts is not None:
-                logger.info("Audit(role=%s, year=%d) top description values:\n%s", role, year, desc_counts.to_string())
-            if events_counts is not None:
-                logger.info("Audit(role=%s, year=%d) top events values:\n%s", role, year, events_counts.to_string())
-
-            # Also log which description values actually triggered swing/chase in this dataset slice.
-            try:
-                in_zone_audit = compute_in_zone(df)
-                swing_audit = compute_swing_flag(df)
-                desc_lower = df["description"].fillna("").astype(str).str.lower()
-                whiff_audit = swing_audit & desc_lower.str.contains("swinging_strike", na=False)
-
-                swing_desc_counts = df.loc[swing_audit, "description"].value_counts(dropna=True).head(15)
-                whiff_desc_counts = df.loc[whiff_audit, "description"].value_counts(dropna=True).head(15)
-
-                logger.info(
-                    "Audit(role=%s, year=%d) swing_rate=%.4f zone_swing_rate=%.4f chase_rate=%.4f contact_rate=%.4f whiff_rate=%.4f",
-                    role,
-                    year,
-                    float(swing_audit.mean()),
-                    float((swing_audit & in_zone_audit).mean()),
-                    float((swing_audit & ~in_zone_audit).mean()),
-                    float((swing_audit & ~whiff_audit).mean()),
-                    float(whiff_audit.mean()),
-                )
-                logger.info("Audit(role=%s, year=%d) swing-trigger description values:\n%s", role, year, swing_desc_counts.to_string())
-                logger.info("Audit(role=%s, year=%d) whiff-trigger description values:\n%s", role, year, whiff_desc_counts.to_string())
-            except Exception as exc:
-                logger.warning("Audit computation failed for role=%s year=%d: %s", role, year, exc)
-
-            audited_years[year] = audited_years.get(year, 0) + 1
 
         row = _player_year_features_from_df(
             df=df,
@@ -386,7 +345,6 @@ def main() -> None:
     parser.add_argument("--min-pitches-batter", type=int, default=500)
     parser.add_argument("--min-batted-ball-batter", type=int, default=200)
     parser.add_argument("--hard-hit-speed-mph", type=float, default=95.0)
-    parser.add_argument("--audit-sample-player-years-per-year", type=int, default=1)
 
     args = parser.parse_args()
 
@@ -401,7 +359,6 @@ def main() -> None:
         min_pitches_batter=args.min_pitches_batter,
         min_batted_ball_batter=args.min_batted_ball_batter,
         hard_hit_speed_mph=args.hard_hit_speed_mph,
-        audit_sample_player_years_per_role_year=args.audit_sample_player_years_per_year,
     )
 
 
