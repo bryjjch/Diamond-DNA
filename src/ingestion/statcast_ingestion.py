@@ -2,7 +2,7 @@
 """
 Statcast Pitch Data Ingestion
 
-Fetches pitch-level Statcast data from pybaseball for a date range (one API call per day)
+Fetches pitch-level Statcast data from pybaseball for a date range
 and uploads each day to S3 as Parquet at {s3_prefix}/year=Y/date=D/statcast_pitches.parquet.
 
 Use for both daily (start_date = end_date = yesterday) and backfill (larger range).
@@ -30,33 +30,29 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def fetch_statcast_data(start_date: datetime, end_date: datetime, max_retries: int = 3) -> Optional[pd.DataFrame]:
+def fetch_statcast_data_for_date(date_str: str, max_retries: int = 3) -> Optional[pd.DataFrame]:
     """
-    Fetch Statcast data for a date range with retry logic.
+    Fetch Statcast pitch data for a single calendar day (YYYY-MM-DD) with retry logic.
     """
-    start_str = start_date.strftime('%Y-%m-%d')
-    end_str = end_date.strftime('%Y-%m-%d')
-
     for attempt in range(max_retries):
         try:
-            logger.info(f"Fetching Statcast data for {start_str} to {end_str} (attempt {attempt + 1})")
-            df = statcast(start_dt=start_str, end_dt=end_str)
+            logger.info(f"Fetching Statcast data for {date_str} (attempt {attempt + 1})")
+            df = statcast(start_dt=date_str, end_dt=date_str)
 
             if df is not None and not df.empty:
-                logger.info(f"Fetched {len(df)} records for {start_str} to {end_str}")
+                logger.info(f"Fetched {len(df)} records for {date_str}")
                 return df
-            else:
-                logger.warning(f"No data returned for {start_str} to {end_str}")
-                return pd.DataFrame()
+            logger.warning(f"No data returned for {date_str}")
+            return pd.DataFrame()
 
         except Exception as e:
-            logger.error(f"Error fetching data for {start_str} to {end_str} (attempt {attempt + 1}): {e}")
+            logger.error(f"Error fetching data for {date_str} (attempt {attempt + 1}): {e}")
             if attempt < max_retries - 1:
                 wait_time = (attempt + 1) ** 2
                 logger.info(f"Retrying in {wait_time} seconds...")
                 time.sleep(wait_time)
             else:
-                logger.error(f"Failed to fetch data for {start_str} to {end_str} after {max_retries} attempts")
+                logger.error(f"Failed to fetch data for {date_str} after {max_retries} attempts")
                 return None
 
     return None
@@ -87,10 +83,8 @@ def fetch_pitch_data_for_date(date_str: str, s3_bucket: str, s3_prefix: str) -> 
         }
 
     logger.info(f"Ingesting Statcast data for {date_str}")
-    start_dt = datetime(ingest_date.year, ingest_date.month, ingest_date.day)
-    end_dt = start_dt
 
-    df = fetch_statcast_data(start_dt, end_dt)
+    df = fetch_statcast_data_for_date(date_str)
     if df is None:
         return {"status": "error", "message": "Fetch failed after retries"}
     if df.empty:
