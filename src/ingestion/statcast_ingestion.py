@@ -20,7 +20,7 @@ from typing import Optional
 import pandas as pd
 from pybaseball import statcast
 
-from s3_parquet import write_parquet_to_s3
+from ..s3_parquet import write_parquet_to_s3
 
 # Configure logging
 logging.basicConfig(
