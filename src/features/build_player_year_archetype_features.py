@@ -6,7 +6,7 @@ Reads from processed by-player Statcast parquet:
   {processed_prefix}/{role}/{role}_id=<id>/year=<year>/statcast_pitches.parquet
 
 Writes:
-  {feature_prefix}/role={role}/year={year}/player_year_features.parquet
+  {feature_prefix}/{role}/year={year}/player_year_features.parquet
 """
 
 from __future__ import annotations
@@ -55,10 +55,6 @@ def _list_player_year_keys(
     # Keys are created by processing script as:
     # {processed_prefix}/{role}/{role}_id=<id>/year=<year>/statcast_pitches.parquet
     list_prefix = f"{processed_prefix}/{role}/{role}_id="
-    # Escape processed_prefix/role because they may contain special characters.
-    key_re = re.compile(
-        rf"^{re.escape(processed_prefix)}/{re.escape(role)}/{re.escape(role)}_id=(\d+)/year=(\d+)/statcast_pitches\\.parquet$"
-    )
 
     out: List[Tuple[int, int, str]] = []
     paginator = get_s3_client().get_paginator("list_objects_v2")
@@ -67,11 +63,12 @@ def _list_player_year_keys(
             key = obj.get("Key")
             if not key:
                 continue
-            m = key_re.match(key)
-            if not m:
+            player_m = re.search(rf"{re.escape(role)}_id=(\d+)", key)
+            year_m = re.search(r"year=(\d+)", key)
+            if not player_m or not year_m:
                 continue
-            player_id = int(m.group(1))
-            year = int(m.group(2))
+            player_id = int(player_m.group(1))
+            year = int(year_m.group(1))
             if year < start_year or year > end_year:
                 continue
             out.append((player_id, year, key))
@@ -327,7 +324,7 @@ def build_features(
         df_year = features_df[features_df["year"] == year]
         if df_year.empty:
             continue
-        out_key = f"{feature_prefix}/role={role}/year={year}/player_year_features.parquet"
+        out_key = f"{feature_prefix}/{role}/year={year}/player_year_features.parquet"
         logger.info("Writing %d feature rows to s3://%s/%s", len(df_year), bucket, out_key)
         write_parquet_to_s3(df_year, bucket, out_key, log_write=False)
 
