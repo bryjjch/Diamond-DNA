@@ -2,11 +2,13 @@
 """
 Build player-year pitch-derived archetype-friendly features.
 
-Reads from processed by-player Statcast parquet:
+Reads from processed by-player Statcast parquet for each role:
   {processed_prefix}/{role}/{role}_id=<id>/year=<year>/statcast_pitches.parquet
 
-Writes:
+Writes one parquet per role and year:
   {feature_prefix}/{role}/year={year}/player_year_features.parquet
+
+A single run processes batters first, then pitchers.
 """
 
 from __future__ import annotations
@@ -334,7 +336,6 @@ def main() -> None:
     parser.add_argument("--bucket", type=str, default=os.environ.get("S3_BUCKET", "diamond-dna"))
     parser.add_argument("--processed-prefix", type=str, default=os.environ.get("PROCESSED_PREFIX", "processed/statcast"))
     parser.add_argument("--feature-prefix", type=str, default=os.environ.get("FEATURE_PREFIX", "features/statcast"))
-    parser.add_argument("--role", type=str, choices=["pitcher", "batter"], default=os.environ.get("ROLE", "pitcher"))
     parser.add_argument("--start-year", type=int, default=2022)
     parser.add_argument("--end-year", type=int, default=2025)
 
@@ -345,18 +346,20 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    build_features(
-        bucket=args.bucket,
-        processed_prefix=args.processed_prefix,
-        role=args.role,
-        feature_prefix=args.feature_prefix,
-        start_year=args.start_year,
-        end_year=args.end_year,
-        min_pitches_pitcher=args.min_pitches_pitcher,
-        min_pitches_batter=args.min_pitches_batter,
-        min_batted_ball_batter=args.min_batted_ball_batter,
-        hard_hit_speed_mph=args.hard_hit_speed_mph,
-    )
+    for role in ("batter", "pitcher"):
+        logger.info("Building features for role=%s", role)
+        build_features(
+            bucket=args.bucket,
+            processed_prefix=args.processed_prefix,
+            role=role,
+            feature_prefix=args.feature_prefix,
+            start_year=args.start_year,
+            end_year=args.end_year,
+            min_pitches_pitcher=args.min_pitches_pitcher,
+            min_pitches_batter=args.min_pitches_batter,
+            min_batted_ball_batter=args.min_batted_ball_batter,
+            hard_hit_speed_mph=args.hard_hit_speed_mph,
+        )
 
 
 if __name__ == "__main__":
