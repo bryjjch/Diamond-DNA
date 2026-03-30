@@ -29,11 +29,19 @@ from ..s3_parquet import get_s3_client, read_parquet_from_s3, write_parquet_to_s
 
 from .archetype_feature_defs import (
     DEFAULT_BARREL_DEF,
+    batted_ball_type_rates,
     compute_barrel_flag,
     compute_in_zone,
     compute_swing_flag,
+    fastball_offspeed_velo_means_and_diff,
+    first_pitch_strike_rate,
     iqr_mean_summary,
+    pitch_type_physical_means,
     pitch_type_shares_and_entropy,
+    platoon_estimated_woba_means,
+    pull_oppo_center_rates,
+    sweet_spot_rate,
+    zone_edge_and_meatball_rates,
 )
 
 
@@ -98,6 +106,7 @@ def _player_year_features_from_df(
     min_pitches_batter: int,
     min_batted_ball_batter: int,
     hard_hit_speed_mph: float,
+    min_pitches_per_pitch_type: int,
 ) -> Optional[Dict[str, object]]:
     # Derived flags used across both roles.
     in_zone = compute_in_zone(df)
@@ -153,7 +162,16 @@ def _player_year_features_from_df(
         else:
             delta_mean = _nan_mean(df[delta_col])
 
-        out: Dict[str, object] = dict(base)
+        rs = pd.to_numeric(df["release_speed"], errors="coerce")
+        release_speed_max = float(rs.max()) if rs.notna().any() else float("nan")
+
+        fb_v, off_v, velo_diff = fastball_offspeed_velo_means_and_diff(df)
+        edge_pct, meat_pct = zone_edge_and_meatball_rates(df)
+        fps = first_pitch_strike_rate(df)
+        xw_l, xw_r, xw_plat = platoon_estimated_woba_means(df, bip_only=True)
+        bb_p = batted_ball_type_rates(df)
+
+        out = dict(base)
         out.update(
             {
                 "batter_swing_rate": swing_rate,
@@ -162,24 +180,36 @@ def _player_year_features_from_df(
                 "batter_contact_rate": contact_rate,
                 "batter_whiff_rate": whiff_rate,
                 "in_zone_rate": float(in_zone.mean()),
-                "release_speed_mean": float(pd.to_numeric(df["release_speed"], errors="coerce").mean(skipna=True)),
+                "release_speed_max": release_speed_max,
+                "fastball_velo_mean": fb_v,
+                "offspeed_velo_mean": off_v,
+                "velo_differential": velo_diff,
                 "release_speed_iqr": iqr_mean_summary(df["release_speed"])[1],
-                "release_spin_rate_mean": float(pd.to_numeric(df["release_spin_rate"], errors="coerce").mean(skipna=True)),
                 "release_spin_rate_iqr": iqr_mean_summary(df["release_spin_rate"])[1],
+                "pfx_x_iqr": iqr_mean_summary(df["pfx_x"])[1],
                 "release_extension_mean": float(pd.to_numeric(df["release_extension"], errors="coerce").mean(skipna=True)),
                 "release_extension_iqr": iqr_mean_summary(df["release_extension"])[1],
-                "pfx_x_mean": float(pd.to_numeric(df["pfx_x"], errors="coerce").mean(skipna=True)),
-                "pfx_x_iqr": iqr_mean_summary(df["pfx_x"])[1],
                 "pfx_z_mean": float(pd.to_numeric(df["pfx_z"], errors="coerce").mean(skipna=True)),
                 "pfx_z_iqr": iqr_mean_summary(df["pfx_z"])[1],
                 "plate_x_mean": _nan_mean(df["plate_x"]),
                 "plate_x_sd": _nan_std(df["plate_x"]),
                 "plate_z_mean": _nan_mean(df["plate_z"]),
                 "plate_z_sd": _nan_std(df["plate_z"]),
+                "edge_percent": edge_pct,
+                "meatball_percent": meat_pct,
+                "first_pitch_strike_rate": fps,
+                "xwoba_allowed_lhb_mean": xw_l,
+                "xwoba_allowed_rhb_mean": xw_r,
+                "platoon_xwoba_allowed_diff": xw_plat,
+                "gb_percent_allowed": bb_p["gb_percent"],
+                "ld_percent_allowed": bb_p["ld_percent"],
+                "fb_percent_allowed": bb_p["fb_percent"],
+                "iffb_percent_allowed": bb_p["iffb_percent"],
                 "delta_run_exp_mean": delta_mean,
             }
         )
 
+        out.update(pitch_type_physical_means(df, min_pitches_per_type=min_pitches_per_pitch_type))
         shares = pitch_type_shares_and_entropy(df, pitch_type_col="pitch_type")
         out.update(shares)
         return out
@@ -217,6 +247,10 @@ def _player_year_features_from_df(
         hard_hit_flag = (launch_speed >= hard_hit_speed_mph) & has_launch
         hard_hit_rate = float(hard_hit_flag[has_launch].mean()) if denom else float("nan")
 
+        pull_p, oppo_p, _center_p = pull_oppo_center_rates(df)
+        bb_b = batted_ball_type_rates(df)
+        sweet_spot = sweet_spot_rate(df["launch_angle"])
+
         out = dict(base)
         out.update(
             {
@@ -227,6 +261,13 @@ def _player_year_features_from_df(
                 "whiff_rate": whiff_rate,
                 "barrel_rate": barrel_rate,
                 "hard_hit_rate": hard_hit_rate,
+                "pull_percent": pull_p,
+                "opposite_field_percent": oppo_p,
+                "gb_percent": bb_b["gb_percent"],
+                "ld_percent": bb_b["ld_percent"],
+                "fb_percent": bb_b["fb_percent"],
+                "iffb_percent": bb_b["iffb_percent"],
+                "sweet_spot_percent": sweet_spot,
                 "launch_speed_mean": _nan_mean(df["launch_speed"]),
                 "launch_speed_iqr": iqr_mean_summary(df["launch_speed"])[1],
                 "launch_angle_mean": _nan_mean(df["launch_angle"]),
@@ -237,6 +278,11 @@ def _player_year_features_from_df(
                 "estimated_woba_using_speedangle_mean": _nan_mean(df["estimated_woba_using_speedangle"]),
             }
         )
+        if "sprint_speed" in df.columns:
+            ss = pd.to_numeric(df["sprint_speed"], errors="coerce")
+            out["sprint_speed_mean"] = float(ss.mean(skipna=True)) if ss.notna().any() else float("nan")
+        else:
+            out["sprint_speed_mean"] = float("nan")
         return out
 
     raise ValueError(f"Unknown role: {role}")
@@ -248,9 +294,28 @@ def _validate_feature_row(row: Dict[str, object], *, role: str) -> None:
     pitcher_rates = ["batter_swing_rate", "batter_zone_swing_rate", "batter_chase_rate", "batter_contact_rate", "batter_whiff_rate"]
 
     if role == "batter":
-        rates_to_check = required_rates + ["barrel_rate", "hard_hit_rate"]
+        rates_to_check = required_rates + [
+            "barrel_rate",
+            "hard_hit_rate",
+            "pull_percent",
+            "opposite_field_percent",
+            "gb_percent",
+            "ld_percent",
+            "fb_percent",
+            "iffb_percent",
+            "sweet_spot_percent",
+        ]
     else:
-        rates_to_check = pitcher_rates + ["in_zone_rate"]
+        rates_to_check = pitcher_rates + [
+            "in_zone_rate",
+            "edge_percent",
+            "meatball_percent",
+            "first_pitch_strike_rate",
+            "gb_percent_allowed",
+            "ld_percent_allowed",
+            "fb_percent_allowed",
+            "iffb_percent_allowed",
+        ]
 
     for k in rates_to_check:
         if k not in row:
@@ -278,6 +343,7 @@ def build_features(
     min_pitches_batter: int,
     min_batted_ball_batter: int,
     hard_hit_speed_mph: float,
+    min_pitches_per_pitch_type: int,
 ) -> None:
     keys = _list_player_year_keys(
         bucket=bucket,
@@ -309,6 +375,7 @@ def build_features(
             min_pitches_batter=min_pitches_batter,
             min_batted_ball_batter=min_batted_ball_batter,
             hard_hit_speed_mph=hard_hit_speed_mph,
+            min_pitches_per_pitch_type=min_pitches_per_pitch_type,
         )
         if row is None:
             continue
@@ -343,6 +410,12 @@ def main() -> None:
     parser.add_argument("--min-pitches-batter", type=int, default=500)
     parser.add_argument("--min-batted-ball-batter", type=int, default=200)
     parser.add_argument("--hard-hit-speed-mph", type=float, default=95.0)
+    parser.add_argument(
+        "--min-pitches-per-pitch-type",
+        type=int,
+        default=15,
+        help="Minimum pitches of a type to emit pt_<TYPE>_release_speed_mean (and spin, pfx_x) for pitchers.",
+    )
 
     args = parser.parse_args()
 
@@ -359,6 +432,7 @@ def main() -> None:
             min_pitches_batter=args.min_pitches_batter,
             min_batted_ball_batter=args.min_batted_ball_batter,
             hard_hit_speed_mph=args.hard_hit_speed_mph,
+            min_pitches_per_pitch_type=args.min_pitches_per_pitch_type,
         )
 
 
