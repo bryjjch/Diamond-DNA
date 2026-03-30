@@ -107,6 +107,7 @@ def _player_year_features_from_df(
     min_batted_ball_batter: int,
     hard_hit_speed_mph: float,
     min_pitches_per_pitch_type: int,
+    sprint_speed_lookup: Optional[Dict[int, float]] = None,
 ) -> Optional[Dict[str, object]]:
     # Derived flags used across both roles.
     in_zone = compute_in_zone(df)
@@ -278,7 +279,11 @@ def _player_year_features_from_df(
                 "estimated_woba_using_speedangle_mean": _nan_mean(df["estimated_woba_using_speedangle"]),
             }
         )
-        if "sprint_speed" in df.columns:
+        # Sprint speed is not present in pitch-level Statcast pulls. Prefer a lookup from the
+        # Statcast running leaderboard layer (player-year), if provided.
+        if sprint_speed_lookup is not None:
+            out["sprint_speed_mean"] = float(sprint_speed_lookup.get(int(player_id), float("nan")))
+        elif "sprint_speed" in df.columns:
             ss = pd.to_numeric(df["sprint_speed"], errors="coerce")
             out["sprint_speed_mean"] = float(ss.mean(skipna=True)) if ss.notna().any() else float("nan")
         else:
@@ -344,6 +349,8 @@ def build_features(
     min_batted_ball_batter: int,
     hard_hit_speed_mph: float,
     min_pitches_per_pitch_type: int,
+    raw_running_prefix: str,
+    sprint_speed_min_opp: int,
 ) -> None:
     keys = _list_player_year_keys(
         bucket=bucket,
@@ -355,6 +362,38 @@ def build_features(
     if not keys:
         logger.warning("No parquet objects found for role=%s in years [%d..%d]", role, start_year, end_year)
         return
+
+    sprint_lookup_by_year: Dict[int, Dict[int, float]] = {}
+    if role == "batter":
+        for y in range(start_year, end_year + 1):
+            key = f"{raw_running_prefix}/year={y}/statcast_sprint_speed.parquet"
+            running_df = read_parquet_from_s3(bucket, key, log_read=False, missing_key_log="none")
+            if running_df is None or running_df.empty:
+                continue
+
+            cols_lower = {c.lower(): c for c in running_df.columns}
+            id_col = (
+                cols_lower.get("player_id")
+                or cols_lower.get("mlbam_id")
+                or cols_lower.get("mlbamid")
+                or cols_lower.get("id")
+            )
+            ss_col = cols_lower.get("sprint_speed") or cols_lower.get("sprint_speed_ft_per_sec")
+            opp_col = cols_lower.get("opportunities") or cols_lower.get("opp") or cols_lower.get("attempts")
+
+            if not id_col or not ss_col:
+                logger.warning("Sprint speed parquet missing expected id/sprint_speed columns: s3://%s/%s", bucket, key)
+                continue
+
+            tmp = running_df.copy()
+            tmp[id_col] = pd.to_numeric(tmp[id_col], errors="coerce")
+            tmp[ss_col] = pd.to_numeric(tmp[ss_col], errors="coerce")
+            tmp = tmp[tmp[id_col].notna() & tmp[ss_col].notna()]
+            if opp_col and opp_col in tmp.columns:
+                tmp[opp_col] = pd.to_numeric(tmp[opp_col], errors="coerce")
+                tmp = tmp[(tmp[opp_col].isna()) | (tmp[opp_col] >= sprint_speed_min_opp)]
+
+            sprint_lookup_by_year[y] = {int(pid): float(ss) for pid, ss in zip(tmp[id_col], tmp[ss_col])}
 
     feature_rows: List[Dict[str, object]] = []
     for i, (player_id, year, key) in enumerate(keys):
@@ -376,6 +415,7 @@ def build_features(
             min_batted_ball_batter=min_batted_ball_batter,
             hard_hit_speed_mph=hard_hit_speed_mph,
             min_pitches_per_pitch_type=min_pitches_per_pitch_type,
+            sprint_speed_lookup=sprint_lookup_by_year.get(year) if role == "batter" else None,
         )
         if row is None:
             continue
@@ -416,6 +456,18 @@ def main() -> None:
         default=15,
         help="Minimum pitches of a type to emit pt_<TYPE>_release_speed_mean (and spin, pfx_x) for pitchers.",
     )
+    parser.add_argument(
+        "--raw-running-prefix",
+        type=str,
+        default=os.environ.get("RAW_RUNNING_PREFIX", "raw-data/statcast_running"),
+        help="S3 prefix for Statcast running leaderboard parquet (sprint speed).",
+    )
+    parser.add_argument(
+        "--sprint-speed-min-opp",
+        type=int,
+        default=10,
+        help="Minimum sprint opportunities to include from the sprint speed leaderboard parquet.",
+    )
 
     args = parser.parse_args()
 
@@ -433,6 +485,8 @@ def main() -> None:
             min_batted_ball_batter=args.min_batted_ball_batter,
             hard_hit_speed_mph=args.hard_hit_speed_mph,
             min_pitches_per_pitch_type=args.min_pitches_per_pitch_type,
+            raw_running_prefix=args.raw_running_prefix,
+            sprint_speed_min_opp=args.sprint_speed_min_opp,
         )
 
 
