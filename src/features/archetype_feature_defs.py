@@ -19,6 +19,16 @@ _FASTBALL_PITCH_TYPES: Set[str] = {"FF", "FA", "FT", "SI", "FC"}
 # Junk / non-pitch rows to drop from velocity summaries.
 _EXCLUDED_PITCH_TYPES_MINIMAL: Set[str] = {"UN", "PO", "XX", "IN"}
 
+
+def _mean_numeric_to_float(values: pd.Series) -> float:
+    """Mean of coerced numeric series as a Python float; handles all-NA and pd.NA from pandas."""
+    x = pd.to_numeric(values, errors="coerce")
+    m = x.mean(skipna=True)
+    if m is None or pd.isna(m):
+        return float("nan")
+    return float(m)
+
+
 @dataclass(frozen=True)
 class BarrelDef:
     speed_threshold_mph: float = 98.0
@@ -308,8 +318,8 @@ def platoon_estimated_woba_means(
         stand = stand.loc[bip]
         w = w.loc[bip]
 
-    out_l = float(w.loc[stand == "L"].mean())
-    out_r = float(w.loc[stand == "R"].mean())
+    out_l = _mean_numeric_to_float(w.loc[stand == "L"])
+    out_r = _mean_numeric_to_float(w.loc[stand == "R"])
     diff = out_l - out_r if (not np.isnan(out_l) and not np.isnan(out_r)) else float("nan")
     return (out_l, out_r, diff)
 
@@ -336,11 +346,9 @@ def pitch_type_physical_means(
         if int(m.sum()) < min_pitches_per_type:
             continue
         sub = df.loc[m]
-        out[f"pt_{ptype}_release_speed_mean"] = float(pd.to_numeric(sub["release_speed"], errors="coerce").mean())
-        out[f"pt_{ptype}_release_spin_rate_mean"] = float(
-            pd.to_numeric(sub["release_spin_rate"], errors="coerce").mean()
-        )
-        out[f"pt_{ptype}_pfx_x_mean"] = float(pd.to_numeric(sub["pfx_x"], errors="coerce").mean())
+        out[f"pt_{ptype}_release_speed_mean"] = _mean_numeric_to_float(sub["release_speed"])
+        out[f"pt_{ptype}_release_spin_rate_mean"] = _mean_numeric_to_float(sub["release_spin_rate"])
+        out[f"pt_{ptype}_pfx_x_mean"] = _mean_numeric_to_float(sub["pfx_x"])
     return out
 
 
@@ -359,8 +367,8 @@ def fastball_offspeed_velo_means_and_diff(df: pd.DataFrame) -> Tuple[float, floa
     if not fb_mask.any() or not off_mask.any():
         return (float("nan"), float("nan"), float("nan"))
 
-    fb_m = float(spd[fb_mask].mean())
-    off_m = float(spd[off_mask].mean())
+    fb_m = _mean_numeric_to_float(spd[fb_mask])
+    off_m = _mean_numeric_to_float(spd[off_mask])
     return (fb_m, off_m, float(fb_m - off_m))
 
 
