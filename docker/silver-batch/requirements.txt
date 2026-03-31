@@ -1,4 +1,5 @@
-pybaseball
 pandas
+numpy
 pyarrow
 boto3
+pybaseball

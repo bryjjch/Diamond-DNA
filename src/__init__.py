@@ -1,0 +1,1 @@
+"""Diamond-DNA source package."""
