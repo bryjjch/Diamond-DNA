@@ -14,7 +14,7 @@ from .settings import PipelineSettings
 
 
 def statcast_ingestion_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    from ..ingestion.statcast_ingestion import ingest_date_range
+    from ..bronze.statcast_ingestion import ingest_date_range
 
     y = yesterday_utc_date_str()
     cfg = PipelineSettings.from_environ()
@@ -53,7 +53,7 @@ def statcast_ingestion_handler(event: Dict[str, Any], context: Any) -> Dict[str,
 
 
 def bronze_to_silver_features_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    from ..features.bronze_to_silver_features import build_bronze_to_silver_features
+    from ..silver.bronze_to_silver_features import build_bronze_to_silver_features
 
     y = yesterday_utc_date_str()
     cfg = PipelineSettings.from_environ()
@@ -96,7 +96,7 @@ def statcast_by_player_handler(event: Dict[str, Any], context: Any) -> Dict[str,
 
 
 def statcast_running_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    from ..ingestion.statcast_running_ingestion import ingest_year_range
+    from ..bronze.statcast_running_ingestion import ingest_year_range
 
     cy = current_utc_year()
     cfg = PipelineSettings.from_environ()
@@ -126,7 +126,7 @@ def _parse_min_qual_str(s: str, default: str | int) -> str | int:
 
 
 def defence_ingestion_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    from ..ingestion.defence_ingestion import ingest_year_range as defence_ingest_year_range
+    from ..bronze.defence_ingestion import ingest_year_range as defence_ingest_year_range
 
     cy = current_utc_year()
     cfg = PipelineSettings.from_environ()

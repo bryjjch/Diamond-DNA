@@ -1,4 +1,4 @@
-"""Shared ingestion helpers (retries, etc.)."""
+"""Shared helpers for bronze ingestion jobs (retries, etc.)."""
 
 from __future__ import annotations
 

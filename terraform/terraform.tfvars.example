@@ -24,7 +24,7 @@ tags = {
 }
 
 # -----------------------------------------------------------------------------
-# Statcast ingestion Lambda (daily run; same image used for backfill)
+# Bronze Statcast pitch ingestion Lambda (daily run; same image used for backfill)
 # -----------------------------------------------------------------------------
 statcast_ingestion_s3_prefix             = "bronze/statcast"
 statcast_ingestion_schedule_expression   = "cron(0 6 * * ? *)"  # 6 AM UTC daily
@@ -33,7 +33,7 @@ statcast_ingestion_timeout               = 300
 statcast_ingestion_image_tag             = "latest"
 
 # -----------------------------------------------------------------------------
-# Statcast by-player Lambda (daily run; builds by-player layer from bronze)
+# Silver feature Lambda (daily run; bronze Statcast dailies → silver player-year features)
 # -----------------------------------------------------------------------------
 statcast_silver_s3_prefix                = "silver/statcast"
 statcast_gold_s3_prefix                  = "gold/statcast"

@@ -18,11 +18,11 @@ module "s3" {
 
 
 # ============================================================================
-# LAMBDA MODULE (Statcast ingestion + by-player processing)
+# LAMBDA MODULE (bronze Statcast pitches + silver feature build)
 # ============================================================================
 # Two Lambdas, each with its own container image:
-# - statcast-ingestion: runs statcast_ingestion.py (daily EventBridge; backfill via date range).
-# - statcast-by-player: runs bronze_to_silver_features (daily EventBridge; YTD bronze → silver features).
+# - statcast-ingestion (ECR/Lambda name): bronze pitch ingest → runs src.bronze.statcast_ingestion.
+# - statcast-by-player: silver features → runs src.silver.bronze_to_silver_features (YTD bronze → silver).
 module "lambda" {
   source = "./modules/lambda"
 

@@ -12,7 +12,7 @@ STATCAST_PITCHES_FILENAME = "statcast_pitches.parquet"
 STATCAST_SPRINT_SPEED_FILENAME = "statcast_sprint_speed.parquet"
 PLAYER_YEAR_FEATURES_FILENAME = "player_year_features.parquet"
 
-# Bronze defence layer filenames (must match uploads in defence_ingestion).
+# Bronze defence layer filenames (must match uploads in bronze.defence_ingestion).
 DEFENCE_OAA_PARQUET = "statcast_oaa.parquet"
 DEFENCE_OUTFIELD_CATCH_PARQUET = "statcast_outfield_catch_probability.parquet"
 DEFENCE_CATCHER_POPTIME_PARQUET = "statcast_catcher_poptime.parquet"

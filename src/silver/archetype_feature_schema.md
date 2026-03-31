@@ -1,7 +1,7 @@
 # Player-year Archetype Feature Schema (Pitch-derived)
 
 This document describes the output of:
-`src/features/build_player_year_archetype_features.py`
+`src/silver/build_player_year_archetype_features.py`
 
 ## Output rows
 Each row corresponds to exactly one player-year:

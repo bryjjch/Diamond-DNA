@@ -22,9 +22,9 @@ variable "data_lake_bucket_name" {
   type        = string
 }
 
-# Statcast ingestion prefix
+# Bronze Statcast pitch ingestion → S3 prefix
 variable "statcast_ingestion_s3_prefix" {
-  description = "S3 prefix for bronze Statcast data (e.g. bronze/statcast)"
+  description = "S3 prefix for bronze Statcast pitch data (e.g. bronze/statcast)"
   type        = string
   default     = "bronze/statcast"
 }
@@ -42,49 +42,49 @@ variable "statcast_gold_s3_prefix" {
 }
 
 variable "statcast_ingestion_schedule_expression" {
-  description = "EventBridge schedule for Statcast ingestion (e.g. cron(0 6 * * ? *) for 6 AM UTC daily)"
+  description = "EventBridge schedule for bronze Statcast pitch ingestion (e.g. cron(0 6 * * ? *) for 6 AM UTC daily)"
   type        = string
   default     = "cron(0 6 * * ? *)"
 }
 
 variable "statcast_by_player_schedule_expression" {
-  description = "EventBridge schedule for by-player Statcast build (e.g. cron(15 6 * * ? *) for 6:15 AM UTC daily)"
+  description = "EventBridge schedule for silver feature build (e.g. cron(15 6 * * ? *) for 6:15 AM UTC daily)"
   type        = string
   default     = "cron(15 6 * * ? *)"
 }
 
 variable "statcast_ingestion_memory_size" {
-  description = "Lambda memory size in MB for Statcast ingestion"
+  description = "Lambda memory size in MB for bronze Statcast pitch ingestion"
   type        = number
   default     = 1024
 }
 
 variable "statcast_ingestion_timeout" {
-  description = "Lambda timeout in seconds for Statcast ingestion"
+  description = "Lambda timeout in seconds for bronze Statcast pitch ingestion"
   type        = number
   default     = 300
 }
 
 variable "statcast_by_player_memory_size" {
-  description = "Lambda memory size in MB for by-player build"
+  description = "Lambda memory size in MB for silver feature build"
   type        = number
   default     = 1024
 }
 
 variable "statcast_by_player_timeout" {
-  description = "Lambda timeout in seconds for by-player build"
+  description = "Lambda timeout in seconds for silver feature build"
   type        = number
   default     = 900
 }
 
 variable "statcast_ingestion_image_tag" {
-  description = "ECR image tag for the Statcast ingestion Lambda container (e.g. latest)"
+  description = "ECR image tag for the bronze Statcast pitch ingestion Lambda (e.g. latest)"
   type        = string
   default     = "latest"
 }
 
 variable "statcast_by_player_image_tag" {
-  description = "ECR image tag for the Statcast by-player Lambda container (e.g. latest)"
+  description = "ECR image tag for the silver feature Lambda (e.g. latest)"
   type        = string
   default     = "latest"
 }

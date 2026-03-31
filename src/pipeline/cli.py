@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 def run_statcast_ingestion_main() -> None:
-    from ..ingestion.statcast_ingestion import ingest_date_range
+    from ..bronze.statcast_ingestion import ingest_date_range
 
     cfg = PipelineSettings.from_environ()
     yesterday = yesterday_utc_date_str()
@@ -50,7 +50,7 @@ def run_statcast_ingestion_main() -> None:
 
 
 def run_bronze_to_silver_features_main() -> None:
-    from ..features.bronze_to_silver_features import build_bronze_to_silver_features
+    from ..silver.bronze_to_silver_features import build_bronze_to_silver_features
 
     cfg = PipelineSettings.from_environ()
     yesterday = yesterday_utc_date_str()
@@ -107,7 +107,7 @@ def run_bronze_to_silver_features_main() -> None:
 
 
 def run_statcast_running_main() -> None:
-    from ..ingestion.statcast_running_ingestion import ingest_year_range
+    from ..bronze.statcast_running_ingestion import ingest_year_range
 
     cfg = PipelineSettings.from_environ()
     cy = current_utc_year()
@@ -140,7 +140,7 @@ def run_statcast_running_main() -> None:
 
 
 def run_defence_ingestion_main() -> None:
-    from ..ingestion.defence_ingestion import ingest_year_range as defence_ingest_year_range
+    from ..bronze.defence_ingestion import ingest_year_range as defence_ingest_year_range
 
     cfg = PipelineSettings.from_environ()
     cy = current_utc_year()

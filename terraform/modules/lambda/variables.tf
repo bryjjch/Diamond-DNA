@@ -44,13 +44,13 @@ variable "gold_s3_prefix" {
 }
 
 variable "schedule_expression" {
-  description = "EventBridge schedule expression for Statcast ingestion (e.g. cron(0 6 * * ? *) for 6 AM UTC daily)"
+  description = "EventBridge schedule for bronze Statcast pitch ingestion (e.g. cron(0 6 * * ? *) for 6 AM UTC daily)"
   type        = string
   default     = "cron(0 6 * * ? *)"
 }
 
 variable "by_player_schedule_expression" {
-  description = "EventBridge schedule expression for by-player build (e.g. cron(15 6 * * ? *) for 6:15 AM UTC daily)"
+  description = "EventBridge schedule for silver feature build (e.g. cron(15 6 * * ? *) for 6:15 AM UTC daily)"
   type        = string
   default     = "cron(15 6 * * ? *)"
 }
@@ -68,13 +68,13 @@ variable "timeout" {
 }
 
 variable "by_player_memory_size" {
-  description = "Lambda memory size in MB for by-player build"
+  description = "Lambda memory size in MB for silver feature build"
   type        = number
   default     = 1024
 }
 
 variable "by_player_timeout" {
-  description = "Lambda timeout in seconds for by-player build"
+  description = "Lambda timeout in seconds for silver feature build"
   type        = number
   default     = 900
 }
@@ -86,13 +86,13 @@ variable "log_retention_days" {
 }
 
 variable "image_tag" {
-  description = "Tag of the Statcast ingestion container image in ECR (e.g. latest)"
+  description = "Tag of the bronze Statcast pitch ingestion image in ECR (e.g. latest)"
   type        = string
   default     = "latest"
 }
 
 variable "by_player_image_tag" {
-  description = "Tag of the Statcast by-player container image in ECR (e.g. latest)"
+  description = "Tag of the silver feature Lambda image in ECR (e.g. latest)"
   type        = string
   default     = "latest"
 }

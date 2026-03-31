@@ -1,4 +1,4 @@
-# ECR repository for the Statcast ingestion Lambda container image
+# ECR repository for the bronze Statcast pitch ingestion Lambda image
 resource "aws_ecr_repository" "statcast_ingestion" {
   name                 = "${var.name_prefix}-statcast-ingestion"
   image_tag_mutability = "MUTABLE"
@@ -10,7 +10,7 @@ resource "aws_ecr_repository" "statcast_ingestion" {
   tags = var.tags
 }
 
-# ECR repository for the Statcast by-player processing Lambda container image
+# ECR repository for the silver feature build Lambda image
 resource "aws_ecr_repository" "statcast_by_player" {
   name                 = "${var.name_prefix}-statcast-by-player"
   image_tag_mutability = "MUTABLE"
@@ -147,7 +147,7 @@ resource "aws_iam_role_policy" "s3_put" {
 }
 
 # Lambda function (container image from ECR)
-# Image must be built from repo root: docker build --platform linux/amd64 --provenance=false -f docker/statcast-ingestion/Dockerfile -t <ecr_repo_url>:<tag> .
+# Image must be built from repo root: docker build --platform linux/amd64 --provenance=false -f docker/bronze/Dockerfile -t <ecr_repo_url>:<tag> .
 # (must use provenance=false for a compatible lambda image)
 # Then push: aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <account>.dkr.ecr.<region>.amazonaws.com
 #            docker push <ecr_repo_url>:<tag>
@@ -207,7 +207,7 @@ resource "aws_lambda_function" "statcast_by_player" {
 # EventBridge rule to run daily
 resource "aws_cloudwatch_event_rule" "statcast_ingestion" {
   name                = "${var.name_prefix}-statcast-ingestion-schedule"
-  description         = "Trigger Statcast ingestion (daily run: yesterday's data)"
+  description         = "Trigger bronze Statcast pitch ingestion (daily: yesterday UTC)"
   schedule_expression = var.schedule_expression
   tags                = var.tags
 }
@@ -231,7 +231,7 @@ resource "aws_lambda_permission" "eventbridge" {
 # EventBridge rule to run by-player build daily (optionally offset in time)
 resource "aws_cloudwatch_event_rule" "statcast_by_player" {
   name                = "${var.name_prefix}-statcast-by-player-schedule"
-  description         = "Trigger Statcast by-player build (daily run: yesterday's data)"
+  description         = "Trigger silver feature build (daily: YTD bronze to silver)"
   schedule_expression = var.by_player_schedule_expression
   tags                = var.tags
 }
