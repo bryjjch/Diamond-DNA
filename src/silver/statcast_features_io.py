@@ -10,7 +10,7 @@ from typing import Dict
 import pandas as pd
 
 from ..pipeline.lake_paths import raw_sprint_speed_key
-from ..s3_parquet import read_parquet_from_s3
+from ..pipeline.s3_parquet import read_parquet_from_s3
 
 logger = logging.getLogger(__name__)
 

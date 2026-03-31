@@ -17,7 +17,7 @@ from pybaseball import statcast
 
 from ..pipeline.ingest_common import retry_with_backoff
 from ..pipeline.lake_paths import raw_statcast_day_key
-from ..s3_parquet import write_parquet_to_s3
+from ..pipeline.s3_parquet import write_parquet_to_s3
 
 # Configure logging
 logging.basicConfig(

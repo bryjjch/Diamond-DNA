@@ -49,7 +49,7 @@ from ..pipeline.lake_paths import (
     DEFENCE_OUTFIELD_CATCH_PARQUET,
     raw_defence_dataset_key,
 )
-from ..s3_parquet import write_parquet_to_s3
+from ..pipeline.s3_parquet import write_parquet_to_s3
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)

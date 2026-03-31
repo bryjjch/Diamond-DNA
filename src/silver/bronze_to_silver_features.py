@@ -20,7 +20,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 import pandas as pd
 
 from ..pipeline.lake_paths import feature_player_year_output_key, raw_statcast_day_key
-from ..s3_parquet import read_parquet_from_s3, write_parquet_to_s3
+from ..pipeline.s3_parquet import read_parquet_from_s3, write_parquet_to_s3
 from .build_player_year_archetype_features import (
     _validate_feature_row,
     player_year_features_from_df,

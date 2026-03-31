@@ -27,7 +27,7 @@ from ..pipeline.lake_paths import (
     DEFENCE_OUTFIELD_CATCH_PARQUET,
     raw_defence_dataset_key,
 )
-from ..s3_parquet import read_parquet_from_s3
+from ..pipeline.s3_parquet import read_parquet_from_s3
 
 logger = logging.getLogger(__name__)
 
