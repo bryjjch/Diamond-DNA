@@ -27,6 +27,11 @@ import pandas as pd
 
 from ..s3_parquet import get_s3_client, read_parquet_from_s3, write_parquet_to_s3
 
+from .defence_player_year import (
+    fangraphs_to_mlbam_map,
+    load_defence_metrics_by_player_year,
+    merge_defence_into_row,
+)
 from .archetype_feature_defs import (
     DEFAULT_BARREL_DEF,
     batted_ball_type_rates,
@@ -309,6 +314,9 @@ def _validate_feature_row(row: Dict[str, object], *, role: str) -> None:
             "fb_percent",
             "iffb_percent",
             "sweet_spot_percent",
+            "def_actual_fielding_success_rate_mean",
+            "def_adj_estimated_fielding_success_rate_mean",
+            "def_outfield_catch_completion_rate",
         ]
     else:
         rates_to_check = pitcher_rates + [
@@ -351,6 +359,7 @@ def build_features(
     min_pitches_per_pitch_type: int,
     raw_running_prefix: str,
     sprint_speed_min_opp: int,
+    raw_defence_prefix: str,
 ) -> None:
     keys = _list_player_year_keys(
         bucket=bucket,
@@ -395,6 +404,17 @@ def build_features(
 
             sprint_lookup_by_year[y] = {int(pid): float(ss) for pid, ss in zip(tmp[id_col], tmp[ss_col])}
 
+    defence_by_year: Dict[int, Dict[int, Dict[str, float]]] = {}
+    if role == "batter":
+        fg_map = fangraphs_to_mlbam_map()
+        for y in range(start_year, end_year + 1):
+            defence_by_year[y] = load_defence_metrics_by_player_year(
+                bucket,
+                raw_defence_prefix,
+                y,
+                fg_id_map=fg_map,
+            )
+
     feature_rows: List[Dict[str, object]] = []
     for i, (player_id, year, key) in enumerate(keys):
         if (i % 50) == 0:
@@ -419,6 +439,9 @@ def build_features(
         )
         if row is None:
             continue
+
+        if role == "batter":
+            merge_defence_into_row(row, defence_by_year.get(year, {}))
 
         _validate_feature_row(row, role=role)
         feature_rows.append(row)
@@ -468,6 +491,12 @@ def main() -> None:
         default=10,
         help="Minimum sprint opportunities to include from the sprint speed leaderboard parquet.",
     )
+    parser.add_argument(
+        "--raw-defence-prefix",
+        type=str,
+        default=os.environ.get("RAW_DEFENCE_PREFIX", "raw-data/defence"),
+        help="S3 prefix for defensive raw Parquet (OAA, framing, DRS, etc.).",
+    )
 
     args = parser.parse_args()
 
@@ -487,6 +516,7 @@ def main() -> None:
             min_pitches_per_pitch_type=args.min_pitches_per_pitch_type,
             raw_running_prefix=args.raw_running_prefix,
             sprint_speed_min_opp=args.sprint_speed_min_opp,
+            raw_defence_prefix=args.raw_defence_prefix,
         )
 
 
