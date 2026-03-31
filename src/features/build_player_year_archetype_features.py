@@ -13,19 +13,15 @@ A single run processes batters first, then pitchers.
 
 from __future__ import annotations
 
-import argparse
 import logging
-import os
-import re
-import sys
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
 
-from ..s3_parquet import get_s3_client, read_parquet_from_s3, write_parquet_to_s3
+from ..pipeline.lake_paths import feature_player_year_output_key
+from ..pipeline.listing import list_processed_statcast_player_year_keys
+from ..s3_parquet import read_parquet_from_s3, write_parquet_to_s3
 
 from .defence_player_year import (
     fangraphs_to_mlbam_map,
@@ -48,47 +44,11 @@ from .archetype_feature_defs import (
     sweet_spot_rate,
     zone_edge_and_meatball_rates,
 )
+from .statcast_features_io import build_sprint_speed_lookups_by_year
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
-
-
-def _list_player_year_keys(
-    *,
-    bucket: str,
-    processed_prefix: str,
-    role: str,
-    start_year: int,
-    end_year: int,
-) -> List[Tuple[int, int, str]]:
-    """
-    List all statcast player-year parquet objects for a role/year range.
-
-    Returns list of (player_id, year, key).
-    """
-    # Keys are created by processing script as:
-    # {processed_prefix}/{role}/{role}_id=<id>/year=<year>/statcast_pitches.parquet
-    list_prefix = f"{processed_prefix}/{role}/{role}_id="
-
-    out: List[Tuple[int, int, str]] = []
-    paginator = get_s3_client().get_paginator("list_objects_v2")
-    for page in paginator.paginate(Bucket=bucket, Prefix=list_prefix):
-        for obj in page.get("Contents", []) or []:
-            key = obj.get("Key")
-            if not key:
-                continue
-            player_m = re.search(rf"{re.escape(role)}_id=(\d+)", key)
-            year_m = re.search(r"year=(\d+)", key)
-            if not player_m or not year_m:
-                continue
-            player_id = int(player_m.group(1))
-            year = int(year_m.group(1))
-            if year < start_year or year > end_year:
-                continue
-            out.append((player_id, year, key))
-    out.sort(key=lambda x: (x[1], x[0]))
-    return out
 
 
 def _nan_mean(series: pd.Series) -> float:
@@ -101,7 +61,7 @@ def _nan_std(series: pd.Series) -> float:
     return float(x.std(skipna=True, ddof=0))
 
 
-def _player_year_features_from_df(
+def player_year_features_from_df(
     *,
     df: pd.DataFrame,
     role: str,
@@ -361,7 +321,7 @@ def build_features(
     sprint_speed_min_opp: int,
     raw_defence_prefix: str,
 ) -> None:
-    keys = _list_player_year_keys(
+    keys = list_processed_statcast_player_year_keys(
         bucket=bucket,
         processed_prefix=processed_prefix,
         role=role,
@@ -374,35 +334,13 @@ def build_features(
 
     sprint_lookup_by_year: Dict[int, Dict[int, float]] = {}
     if role == "batter":
-        for y in range(start_year, end_year + 1):
-            key = f"{raw_running_prefix}/year={y}/statcast_sprint_speed.parquet"
-            running_df = read_parquet_from_s3(bucket, key, log_read=False, missing_key_log="none")
-            if running_df is None or running_df.empty:
-                continue
-
-            cols_lower = {c.lower(): c for c in running_df.columns}
-            id_col = (
-                cols_lower.get("player_id")
-                or cols_lower.get("mlbam_id")
-                or cols_lower.get("mlbamid")
-                or cols_lower.get("id")
-            )
-            ss_col = cols_lower.get("sprint_speed") or cols_lower.get("sprint_speed_ft_per_sec")
-            opp_col = cols_lower.get("opportunities") or cols_lower.get("opp") or cols_lower.get("attempts")
-
-            if not id_col or not ss_col:
-                logger.warning("Sprint speed parquet missing expected id/sprint_speed columns: s3://%s/%s", bucket, key)
-                continue
-
-            tmp = running_df.copy()
-            tmp[id_col] = pd.to_numeric(tmp[id_col], errors="coerce")
-            tmp[ss_col] = pd.to_numeric(tmp[ss_col], errors="coerce")
-            tmp = tmp[tmp[id_col].notna() & tmp[ss_col].notna()]
-            if opp_col and opp_col in tmp.columns:
-                tmp[opp_col] = pd.to_numeric(tmp[opp_col], errors="coerce")
-                tmp = tmp[(tmp[opp_col].isna()) | (tmp[opp_col] >= sprint_speed_min_opp)]
-
-            sprint_lookup_by_year[y] = {int(pid): float(ss) for pid, ss in zip(tmp[id_col], tmp[ss_col])}
+        sprint_lookup_by_year = build_sprint_speed_lookups_by_year(
+            bucket,
+            raw_running_prefix,
+            start_year,
+            end_year,
+            sprint_speed_min_opp,
+        )
 
     defence_by_year: Dict[int, Dict[int, Dict[str, float]]] = {}
     if role == "batter":
@@ -425,7 +363,7 @@ def build_features(
             logger.warning("Empty parquet for player_id=%d year=%d (%s)", player_id, year, key)
             continue
 
-        row = _player_year_features_from_df(
+        row = player_year_features_from_df(
             df=df,
             role=role,
             player_id=player_id,
@@ -456,68 +394,15 @@ def build_features(
         df_year = features_df[features_df["year"] == year]
         if df_year.empty:
             continue
-        out_key = f"{feature_prefix}/{role}/year={year}/player_year_features.parquet"
+        out_key = feature_player_year_output_key(feature_prefix, role, year)
         logger.info("Writing %d feature rows to s3://%s/%s", len(df_year), bucket, out_key)
         write_parquet_to_s3(df_year, bucket, out_key, log_write=False)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build pitch-derived player-year archetype features from processed statcast parquet.")
-    parser.add_argument("--bucket", type=str, default=os.environ.get("S3_BUCKET", "diamond-dna"))
-    parser.add_argument("--processed-prefix", type=str, default=os.environ.get("PROCESSED_PREFIX", "processed/statcast"))
-    parser.add_argument("--feature-prefix", type=str, default=os.environ.get("FEATURE_PREFIX", "features/statcast"))
-    parser.add_argument("--start-year", type=int, default=2022)
-    parser.add_argument("--end-year", type=int, default=2025)
+    from ..pipeline.cli import run_build_player_year_archetype_features_main
 
-    parser.add_argument("--min-pitches-pitcher", type=int, default=500)
-    parser.add_argument("--min-pitches-batter", type=int, default=500)
-    parser.add_argument("--min-batted-ball-batter", type=int, default=200)
-    parser.add_argument("--hard-hit-speed-mph", type=float, default=95.0)
-    parser.add_argument(
-        "--min-pitches-per-pitch-type",
-        type=int,
-        default=15,
-        help="Minimum pitches of a type to emit pt_<TYPE>_release_speed_mean (and spin, pfx_x) for pitchers.",
-    )
-    parser.add_argument(
-        "--raw-running-prefix",
-        type=str,
-        default=os.environ.get("RAW_RUNNING_PREFIX", "raw-data/statcast_running"),
-        help="S3 prefix for Statcast running leaderboard parquet (sprint speed).",
-    )
-    parser.add_argument(
-        "--sprint-speed-min-opp",
-        type=int,
-        default=10,
-        help="Minimum sprint opportunities to include from the sprint speed leaderboard parquet.",
-    )
-    parser.add_argument(
-        "--raw-defence-prefix",
-        type=str,
-        default=os.environ.get("RAW_DEFENCE_PREFIX", "raw-data/defence"),
-        help="S3 prefix for defensive raw Parquet (OAA, framing, DRS, etc.).",
-    )
-
-    args = parser.parse_args()
-
-    for role in ("batter", "pitcher"):
-        logger.info("Building features for role=%s", role)
-        build_features(
-            bucket=args.bucket,
-            processed_prefix=args.processed_prefix,
-            role=role,
-            feature_prefix=args.feature_prefix,
-            start_year=args.start_year,
-            end_year=args.end_year,
-            min_pitches_pitcher=args.min_pitches_pitcher,
-            min_pitches_batter=args.min_pitches_batter,
-            min_batted_ball_batter=args.min_batted_ball_batter,
-            hard_hit_speed_mph=args.hard_hit_speed_mph,
-            min_pitches_per_pitch_type=args.min_pitches_per_pitch_type,
-            raw_running_prefix=args.raw_running_prefix,
-            sprint_speed_min_opp=args.sprint_speed_min_opp,
-            raw_defence_prefix=args.raw_defence_prefix,
-        )
+    run_build_player_year_archetype_features_main()
 
 
 if __name__ == "__main__":

@@ -16,17 +16,14 @@ fielder_2_name, fielder_3_name, ... fielder_9_name. Requires pybaseball; if not
 installed, name columns are skipped with a warning.
 """
 
-import argparse
 import logging
-import os
-import sys
-from datetime import date, datetime, timedelta, timezone
-from pathlib import Path
+from datetime import date, datetime, timedelta
 from typing import Dict, Iterable, List, Literal, Optional, Set
 
 import pandas as pd
 from pybaseball import playerid_reverse_lookup
 
+from ..pipeline.lake_paths import processed_statcast_player_year_key, raw_statcast_day_key
 from ..s3_parquet import read_parquet_from_s3, write_parquet_to_s3
 
 Role = Literal["pitcher", "batter"]
@@ -55,14 +52,6 @@ logger = logging.getLogger(__name__)
 
 def _parse_date(value: str) -> date:
     return datetime.strptime(value, "%Y-%m-%d").date()
-
-
-def _build_raw_key(prefix: str, d: date) -> str:
-    return f"{prefix}/year={d.year}/date={d.strftime('%Y-%m-%d')}/statcast_pitches.parquet"
-
-
-def _build_processed_key(prefix: str, role: Role, player_id: int, year: int) -> str:
-    return f"{prefix}/{role}/{role}_id={player_id}/year={year}/statcast_pitches.parquet"
 
 
 def _date_range(start: date, end: date) -> Iterable[date]:
@@ -194,7 +183,7 @@ def build_by_player_layer(
     days_with_data = 0
 
     for d in _date_range(start, end):
-        key = _build_raw_key(raw_prefix, d)
+        key = raw_statcast_day_key(raw_prefix, d)
         df = read_parquet_from_s3(s3_bucket, key)
         if df is None or df.empty:
             logger.info("No rows for %s (empty DataFrame)", d)
@@ -258,7 +247,9 @@ def build_by_player_layer(
             player_df["year"] = pd.to_datetime(player_df["game_date"]).dt.year
 
             for year, df_year in player_df.groupby("year"):
-                target_key = _build_processed_key(processed_prefix, role, int(player_id), int(year))
+                target_key = processed_statcast_player_year_key(
+                    processed_prefix, role, int(player_id), int(year)
+                )
                 existing_df = read_parquet_from_s3(s3_bucket, target_key)
 
                 if existing_df is not None and not existing_df.empty:
@@ -297,115 +288,15 @@ def build_by_player_layer(
 
 
 def main() -> None:
-    """
-    CLI entrypoint for by-player build.
-    """
-    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
-    parser = argparse.ArgumentParser(
-        description=(
-            "Build by-player Statcast layer from raw daily files. "
-            "Reads raw-data/statcast by default and writes processed/statcast "
-            "for both pitcher and batter roles."
-        )
-    )
-    parser.add_argument(
-        "--start-date",
-        type=str,
-        default=yesterday,
-        help=f"Start date (YYYY-MM-DD). Default: yesterday UTC ({yesterday})",
-    )
-    parser.add_argument(
-        "--end-date",
-        type=str,
-        default=yesterday,
-        help=f"End date (YYYY-MM-DD). Default: yesterday UTC ({yesterday})",
-    )
-    parser.add_argument(
-        "--s3-bucket",
-        type=str,
-        default=os.environ.get("S3_BUCKET", "diamond-dna"),
-        help="S3 bucket name.",
-    )
-    parser.add_argument(
-        "--raw-prefix",
-        type=str,
-        default=os.environ.get("RAW_PREFIX", "raw-data/statcast"),
-        help="Raw S3 prefix/path (default: raw-data/statcast).",
-    )
-    parser.add_argument(
-        "--processed-prefix",
-        type=str,
-        default=os.environ.get("PROCESSED_PREFIX", "processed/statcast"),
-        help="Processed S3 prefix/path (default: processed/statcast).",
-    )
-    args = parser.parse_args()
+    from ..pipeline.cli import run_processing_statcast_by_player_main
 
-    result = build_by_player_layer(
-        args.start_date,
-        args.end_date,
-        s3_bucket=args.s3_bucket,
-        raw_prefix=args.raw_prefix,
-        processed_prefix=args.processed_prefix,
-    )
-
-    if result["status"] == "error":
-        logger.error(result["message"])
-        raise SystemExit(1)
-    if result["status"] == "no_data":
-        logger.warning(result["message"])
-        # Exit 0 so scheduled runs (e.g. off-season) do not fail
-    # status == "ok": exit 0
+    run_processing_statcast_by_player_main()
 
 
 def handler(event: Dict[str, object], context) -> Dict[str, object]:
-    """
-    Lambda entrypoint for by-player build.
-    """
-    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
-    start_date = (
-        event.get("start_date")
-        if isinstance(event, dict)
-        else None
-    ) or os.environ.get("START_DATE") or yesterday
+    from ..pipeline.handlers import statcast_by_player_handler
 
-    end_date = (
-        event.get("end_date")
-        if isinstance(event, dict)
-        else None
-    ) or os.environ.get("END_DATE") or yesterday
-
-    bucket = (
-        event.get("s3_bucket")
-        if isinstance(event, dict)
-        else None
-    ) or os.environ.get("S3_BUCKET", "diamond-dna")
-
-    raw_prefix = (
-        event.get("raw_prefix")
-        if isinstance(event, dict)
-        else None
-    ) or os.environ.get("RAW_PREFIX", "raw-data/statcast")
-
-    processed_prefix = (
-        event.get("processed_prefix")
-        if isinstance(event, dict)
-        else None
-    ) or os.environ.get("PROCESSED_PREFIX", "processed/statcast")
-
-    result = build_by_player_layer(
-        str(start_date),
-        str(end_date),
-        s3_bucket=str(bucket),
-        raw_prefix=str(raw_prefix),
-        processed_prefix=str(processed_prefix),
-    )
-
-    status_code = 200 if result.get("status") in ("ok", "no_data") else 400
-    return {
-        "statusCode": status_code,
-        "body": result.get("message", ""),
-        "details": result,
-    }
+    return statcast_by_player_handler(event, context)
 
 
 if __name__ == "__main__":
