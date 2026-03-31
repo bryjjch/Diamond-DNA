@@ -52,25 +52,34 @@ def statcast_ingestion_handler(event: Dict[str, Any], context: Any) -> Dict[str,
     }
 
 
-def statcast_by_player_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    from ..processing.processing_statcast_by_player import build_by_player_layer
+def bronze_to_silver_features_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    from ..features.bronze_to_silver_features import build_bronze_to_silver_features
 
     y = yesterday_utc_date_str()
     cfg = PipelineSettings.from_environ()
     start_date = event_or_env_str(event, "start_date", "START_DATE", y)
     end_date = event_or_env_str(event, "end_date", "END_DATE", y)
     bucket = event_or_env_str(event, "s3_bucket", "S3_BUCKET", cfg.s3_bucket)
-    raw_prefix = event_or_env_str(event, "raw_prefix", "RAW_PREFIX", cfg.raw_statcast_prefix)
-    processed_prefix = event_or_env_str(
-        event, "processed_prefix", "PROCESSED_PREFIX", cfg.processed_prefix
+    bronze_prefix = event_or_env_str(event, "bronze_prefix", "RAW_PREFIX", cfg.raw_statcast_prefix)
+    silver_prefix = event_or_env_str(event, "silver_prefix", "FEATURE_PREFIX", cfg.feature_prefix)
+    raw_running = event_or_env_str(
+        event, "raw_running_prefix", "RAW_RUNNING_PREFIX", cfg.raw_running_prefix
     )
+    raw_defence = event_or_env_str(
+        event, "raw_defence_prefix", "RAW_DEFENCE_PREFIX", cfg.raw_defence_prefix
+    )
+    yt_raw = event_or_env_str(event, "year_to_date", "YEAR_TO_DATE", "true")
+    year_to_date = str(yt_raw).strip().lower() not in ("0", "false", "no")
 
-    result = build_by_player_layer(
-        start_date,
-        end_date,
-        s3_bucket=bucket,
-        raw_prefix=raw_prefix,
-        processed_prefix=processed_prefix,
+    result = build_bronze_to_silver_features(
+        bucket=bucket,
+        bronze_statcast_prefix=bronze_prefix,
+        silver_prefix=silver_prefix,
+        start_date_str=start_date,
+        end_date_str=end_date,
+        year_to_date=year_to_date,
+        raw_running_prefix=raw_running,
+        raw_defence_prefix=raw_defence,
     )
 
     status_code = 200 if result.get("status") in ("ok", "no_data") else 400
@@ -79,6 +88,11 @@ def statcast_by_player_handler(event: Dict[str, Any], context: Any) -> Dict[str,
         "body": result.get("message", ""),
         "details": result,
     }
+
+
+def statcast_by_player_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    """Backward-compatible name; invokes bronze→silver features."""
+    return bronze_to_silver_features_handler(event, context)
 
 
 def statcast_running_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:

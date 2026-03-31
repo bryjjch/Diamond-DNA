@@ -1,5 +1,5 @@
 """
-S3 I/O helpers for the Statcast player-year feature build (listing, sprint speed side inputs).
+S3 I/O helpers for the Statcast player-year feature build (sprint speed side inputs).
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ def build_sprint_speed_lookups_by_year(
     sprint_speed_min_opp: int,
 ) -> Dict[int, Dict[int, float]]:
     """
-    Load sprint-speed leaderboards per season; return ``year -> {mlbam_id: sprint_speed}``.
+    Load bronze sprint-speed leaderboards per season; return ``year -> {mlbam_id: sprint_speed}``.
     """
     sprint_lookup_by_year: Dict[int, Dict[int, float]] = {}
     for y in range(start_year, end_year + 1):

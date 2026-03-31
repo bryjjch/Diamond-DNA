@@ -7,7 +7,7 @@ and uploads Parquet under:
 
   {s3_prefix}/year=YYYY/<dataset>.parquet
 
-Default s3_prefix: raw-data/defence
+Default s3_prefix: bronze/defence
 
 Note: pybaseball does not expose ``statcast_leaderboard`` on all releases; arm strength is
 pulled from the Savant arm-strength leaderboard CSV (equivalent to the site export).

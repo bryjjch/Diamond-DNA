@@ -22,7 +22,7 @@ module "s3" {
 # ============================================================================
 # Two Lambdas, each with its own container image:
 # - statcast-ingestion: runs statcast_ingestion.py (daily EventBridge; backfill via date range).
-# - statcast-by-player: runs processing_statcast_by_player.py (daily EventBridge; builds by-player layer).
+# - statcast-by-player: runs bronze_to_silver_features (daily EventBridge; YTD bronze → silver features).
 module "lambda" {
   source = "./modules/lambda"
 
@@ -30,7 +30,8 @@ module "lambda" {
   data_lake_bucket_name          = module.s3.data_lake_bucket_name
   data_lake_bucket_arn           = module.s3.data_lake_bucket_arn
   s3_prefix                      = var.statcast_ingestion_s3_prefix
-  processed_s3_prefix            = var.statcast_processed_s3_prefix
+  silver_s3_prefix               = var.statcast_silver_s3_prefix
+  gold_s3_prefix                 = var.statcast_gold_s3_prefix
   schedule_expression            = var.statcast_ingestion_schedule_expression
   by_player_schedule_expression  = var.statcast_by_player_schedule_expression
   memory_size                    = var.statcast_ingestion_memory_size

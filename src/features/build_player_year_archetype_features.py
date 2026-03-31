@@ -2,32 +2,18 @@
 """
 Build player-year pitch-derived archetype-friendly features.
 
-Reads from processed by-player Statcast parquet for each role:
-  {processed_prefix}/{role}/{role}_id=<id>/year=<year>/statcast_pitches.parquet
-
-Writes one parquet per role and year:
-  {feature_prefix}/{role}/year={year}/player_year_features.parquet
-
-A single run processes batters first, then pitchers.
+Core row logic lives in ``player_year_features_from_df``. The production pipeline
+loads bronze dailies and writes silver tables via ``bronze_to_silver_features``.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 import numpy as np
 import pandas as pd
 
-from ..pipeline.lake_paths import feature_player_year_output_key
-from ..pipeline.listing import list_processed_statcast_player_year_keys
-from ..s3_parquet import read_parquet_from_s3, write_parquet_to_s3
-
-from .defence_player_year import (
-    fangraphs_to_mlbam_map,
-    load_defence_metrics_by_player_year,
-    merge_defence_into_row,
-)
 from .archetype_feature_defs import (
     DEFAULT_BARREL_DEF,
     batted_ball_type_rates,
@@ -44,9 +30,6 @@ from .archetype_feature_defs import (
     sweet_spot_rate,
     zone_edge_and_meatball_rates,
 )
-from .statcast_features_io import build_sprint_speed_lookups_by_year
-
-
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -302,101 +285,6 @@ def _validate_feature_row(row: Dict[str, object], *, role: str) -> None:
             continue
         if not np.isnan(fv) and (fv < 0.0 or fv > 1.0):
             raise ValueError(f"Sanity check failed: {k}={fv} out of [0,1] for role={role}, player={row.get('player_id')}, year={row.get('year')}")
-
-
-def build_features(
-    *,
-    bucket: str,
-    processed_prefix: str,
-    role: str,
-    feature_prefix: str,
-    start_year: int,
-    end_year: int,
-    min_pitches_pitcher: int,
-    min_pitches_batter: int,
-    min_batted_ball_batter: int,
-    hard_hit_speed_mph: float,
-    min_pitches_per_pitch_type: int,
-    raw_running_prefix: str,
-    sprint_speed_min_opp: int,
-    raw_defence_prefix: str,
-) -> None:
-    keys = list_processed_statcast_player_year_keys(
-        bucket=bucket,
-        processed_prefix=processed_prefix,
-        role=role,
-        start_year=start_year,
-        end_year=end_year,
-    )
-    if not keys:
-        logger.warning("No parquet objects found for role=%s in years [%d..%d]", role, start_year, end_year)
-        return
-
-    sprint_lookup_by_year: Dict[int, Dict[int, float]] = {}
-    if role == "batter":
-        sprint_lookup_by_year = build_sprint_speed_lookups_by_year(
-            bucket,
-            raw_running_prefix,
-            start_year,
-            end_year,
-            sprint_speed_min_opp,
-        )
-
-    defence_by_year: Dict[int, Dict[int, Dict[str, float]]] = {}
-    if role == "batter":
-        fg_map = fangraphs_to_mlbam_map()
-        for y in range(start_year, end_year + 1):
-            defence_by_year[y] = load_defence_metrics_by_player_year(
-                bucket,
-                raw_defence_prefix,
-                y,
-                fg_id_map=fg_map,
-            )
-
-    feature_rows: List[Dict[str, object]] = []
-    for i, (player_id, year, key) in enumerate(keys):
-        if (i % 50) == 0:
-            logger.info("Processing %d/%d: player_id=%d year=%d", i + 1, len(keys), player_id, year)
-
-        df = read_parquet_from_s3(bucket, key, log_read=False, missing_key_log="warning")
-        if df is None or df.empty:
-            logger.warning("Empty parquet for player_id=%d year=%d (%s)", player_id, year, key)
-            continue
-
-        row = player_year_features_from_df(
-            df=df,
-            role=role,
-            player_id=player_id,
-            year=year,
-            min_pitches_pitcher=min_pitches_pitcher,
-            min_pitches_batter=min_pitches_batter,
-            min_batted_ball_batter=min_batted_ball_batter,
-            hard_hit_speed_mph=hard_hit_speed_mph,
-            min_pitches_per_pitch_type=min_pitches_per_pitch_type,
-            sprint_speed_lookup=sprint_lookup_by_year.get(year) if role == "batter" else None,
-        )
-        if row is None:
-            continue
-
-        if role == "batter":
-            merge_defence_into_row(row, defence_by_year.get(year, {}))
-
-        _validate_feature_row(row, role=role)
-        feature_rows.append(row)
-
-    if not feature_rows:
-        logger.warning("No feature rows computed for role=%s.", role)
-        return
-
-    features_df = pd.DataFrame(feature_rows)
-    # Write per year.
-    for year in range(start_year, end_year + 1):
-        df_year = features_df[features_df["year"] == year]
-        if df_year.empty:
-            continue
-        out_key = feature_player_year_output_key(feature_prefix, role, year)
-        logger.info("Writing %d feature rows to s3://%s/%s", len(df_year), bucket, out_key)
-        write_parquet_to_s3(df_year, bucket, out_key, log_write=False)
 
 
 def main() -> None:

@@ -54,7 +54,7 @@ def fetch_pitch_data_for_date(date_str: str, s3_bucket: str, s3_prefix: str) -> 
     Args:
         date_str: Date to ingest (YYYY-MM-DD).
         s3_bucket: S3 bucket name.
-        s3_prefix: S3 key prefix (e.g. raw-data/statcast).
+        s3_prefix: S3 key prefix (e.g. bronze/statcast).
 
     Returns:
         Dict with keys: status ("ok" | "no_data" | "error"), message, and optionally records.

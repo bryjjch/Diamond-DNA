@@ -1,4 +1,5 @@
 # Build from repo root: docker build --platform linux/amd64 -f docker/processing/Dockerfile .
+# Image runs src.features.bronze_to_silver_features (bronze Statcast dailies → silver feature tables).
 # Stage 1: install dependencies in an image that can build from source
 FROM python:3.11-slim-bookworm AS builder
 
@@ -16,4 +17,4 @@ FROM public.ecr.aws/lambda/python:3.11
 COPY --from=builder /install/ ${LAMBDA_TASK_ROOT}/
 COPY src/ ${LAMBDA_TASK_ROOT}/src/
 
-CMD ["src.processing.processing_statcast_by_player.handler"]
+CMD ["src.features.bronze_to_silver_features.handler"]

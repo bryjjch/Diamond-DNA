@@ -48,7 +48,7 @@ resource "aws_iam_role_policy_attachment" "by_player_lambda_basic" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-# S3 access for by-player Lambda: read raw, read/write processed
+# S3 access for by-player Lambda: read bronze Statcast, read/write silver features, read bronze side inputs, write gold.
 resource "aws_iam_role_policy" "by_player_s3_access" {
   name = "${var.name_prefix}-statcast-by-player-s3"
   role = aws_iam_role.statcast_by_player.id
@@ -61,7 +61,11 @@ resource "aws_iam_role_policy" "by_player_s3_access" {
         Action = [
           "s3:GetObject"
         ]
-        Resource = "${var.data_lake_bucket_arn}/${var.s3_prefix}/*"
+        Resource = [
+          "${var.data_lake_bucket_arn}/${var.s3_prefix}/*",
+          "${var.data_lake_bucket_arn}/${var.raw_running_s3_prefix}/*",
+          "${var.data_lake_bucket_arn}/${var.raw_defence_s3_prefix}/*",
+        ]
       },
       {
         Effect = "Allow"
@@ -69,7 +73,15 @@ resource "aws_iam_role_policy" "by_player_s3_access" {
           "s3:GetObject",
           "s3:PutObject"
         ]
-        Resource = "${var.data_lake_bucket_arn}/${var.processed_s3_prefix}/*"
+        Resource = "${var.data_lake_bucket_arn}/${var.silver_s3_prefix}/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject"
+        ]
+        Resource = "${var.data_lake_bucket_arn}/${var.gold_s3_prefix}/*"
       }
     ]
   })
@@ -163,7 +175,7 @@ resource "aws_lambda_function" "statcast_ingestion" {
   tags = var.tags
 }
 
-# By-player Lambda function (own container image: processing_statcast_by_player)
+# By-player Lambda function (container: bronze_to_silver_features)
 resource "aws_lambda_function" "statcast_by_player" {
   function_name = "${var.name_prefix}-statcast-by-player"
   role          = aws_iam_role.statcast_by_player.arn
@@ -175,9 +187,13 @@ resource "aws_lambda_function" "statcast_by_player" {
 
   environment {
     variables = {
-      S3_BUCKET        = var.data_lake_bucket_name
-      RAW_PREFIX       = var.s3_prefix
-      PROCESSED_PREFIX = var.processed_s3_prefix
+      S3_BUCKET          = var.data_lake_bucket_name
+      RAW_PREFIX         = var.s3_prefix
+      RAW_RUNNING_PREFIX = var.raw_running_s3_prefix
+      RAW_DEFENCE_PREFIX = var.raw_defence_s3_prefix
+      FEATURE_PREFIX     = var.silver_s3_prefix
+      GOLD_PREFIX        = var.gold_s3_prefix
+      YEAR_TO_DATE       = "true"
     }
   }
 

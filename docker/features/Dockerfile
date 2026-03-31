@@ -9,4 +9,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ /app/src/
 
 # Default CLI command (override args at runtime as needed).
-ENTRYPOINT ["python", "-m", "src.features.build_player_year_archetype_features"]
+ENTRYPOINT ["python", "-m", "src.features.bronze_to_silver_features"]

@@ -28,7 +28,7 @@ def run_statcast_ingestion_main() -> None:
         "--s3-prefix",
         type=str,
         default=cfg.raw_statcast_prefix,
-        help="S3 prefix for raw Statcast pitches (env: S3_PREFIX or RAW_PREFIX)",
+        help="S3 prefix for bronze Statcast pitches (env: S3_PREFIX or RAW_PREFIX)",
     )
     args = parser.parse_args()
 
@@ -49,31 +49,52 @@ def run_statcast_ingestion_main() -> None:
     sys.exit(0)
 
 
-def run_processing_statcast_by_player_main() -> None:
-    from ..processing.processing_statcast_by_player import build_by_player_layer
+def run_bronze_to_silver_features_main() -> None:
+    from ..features.bronze_to_silver_features import build_bronze_to_silver_features
 
     cfg = PipelineSettings.from_environ()
     yesterday = yesterday_utc_date_str()
     parser = argparse.ArgumentParser(
         description=(
-            "Build by-player Statcast layer from raw daily files. "
-            "Reads raw-data/statcast by default and writes processed/statcast "
-            "for both pitcher and batter roles."
+            "Build silver player-year feature tables from bronze Statcast dailies. "
+            "By default loads year-to-date through --end-date for each affected season."
         )
     )
     parser.add_argument("--start-date", type=str, default=yesterday)
     parser.add_argument("--end-date", type=str, default=yesterday)
-    parser.add_argument("--s3-bucket", type=str, default=cfg.s3_bucket)
-    parser.add_argument("--raw-prefix", type=str, default=cfg.raw_statcast_prefix)
-    parser.add_argument("--processed-prefix", type=str, default=cfg.processed_prefix)
+    parser.add_argument(
+        "--no-year-to-date",
+        action="store_true",
+        help="Only load bronze for [start-date, end-date] exactly (no Jan 1 expansion).",
+    )
+    parser.add_argument("--bucket", type=str, default=cfg.s3_bucket)
+    parser.add_argument("--bronze-prefix", type=str, default=cfg.raw_statcast_prefix)
+    parser.add_argument("--silver-prefix", type=str, default=cfg.feature_prefix)
+    parser.add_argument("--min-pitches-pitcher", type=int, default=500)
+    parser.add_argument("--min-pitches-batter", type=int, default=500)
+    parser.add_argument("--min-batted-ball-batter", type=int, default=200)
+    parser.add_argument("--hard-hit-speed-mph", type=float, default=95.0)
+    parser.add_argument("--min-pitches-per-pitch-type", type=int, default=15)
+    parser.add_argument("--raw-running-prefix", type=str, default=cfg.raw_running_prefix)
+    parser.add_argument("--sprint-speed-min-opp", type=int, default=10)
+    parser.add_argument("--raw-defence-prefix", type=str, default=cfg.raw_defence_prefix)
     args = parser.parse_args()
 
-    result = build_by_player_layer(
-        args.start_date,
-        args.end_date,
-        s3_bucket=args.s3_bucket,
-        raw_prefix=args.raw_prefix,
-        processed_prefix=args.processed_prefix,
+    result = build_bronze_to_silver_features(
+        bucket=args.bucket,
+        bronze_statcast_prefix=args.bronze_prefix,
+        silver_prefix=args.silver_prefix,
+        start_date_str=args.start_date,
+        end_date_str=args.end_date,
+        year_to_date=not args.no_year_to_date,
+        min_pitches_pitcher=args.min_pitches_pitcher,
+        min_pitches_batter=args.min_pitches_batter,
+        min_batted_ball_batter=args.min_batted_ball_batter,
+        hard_hit_speed_mph=args.hard_hit_speed_mph,
+        min_pitches_per_pitch_type=args.min_pitches_per_pitch_type,
+        raw_running_prefix=args.raw_running_prefix,
+        sprint_speed_min_opp=args.sprint_speed_min_opp,
+        raw_defence_prefix=args.raw_defence_prefix,
     )
 
     if result["status"] == "error":
@@ -81,6 +102,8 @@ def run_processing_statcast_by_player_main() -> None:
         raise SystemExit(1)
     if result["status"] == "no_data":
         logger.warning(result["message"])
+    else:
+        logger.info(result["message"])
 
 
 def run_statcast_running_main() -> None:
@@ -175,42 +198,5 @@ def run_defence_ingestion_main() -> None:
 
 
 def run_build_player_year_archetype_features_main() -> None:
-    from ..features.build_player_year_archetype_features import build_features
-
-    cfg = PipelineSettings.from_environ()
-    parser = argparse.ArgumentParser(
-        description="Build pitch-derived player-year archetype features from processed statcast parquet."
-    )
-    parser.add_argument("--bucket", type=str, default=cfg.s3_bucket)
-    parser.add_argument("--processed-prefix", type=str, default=cfg.processed_prefix)
-    parser.add_argument("--feature-prefix", type=str, default=cfg.feature_prefix)
-    parser.add_argument("--start-year", type=int, default=2022)
-    parser.add_argument("--end-year", type=int, default=2025)
-    parser.add_argument("--min-pitches-pitcher", type=int, default=500)
-    parser.add_argument("--min-pitches-batter", type=int, default=500)
-    parser.add_argument("--min-batted-ball-batter", type=int, default=200)
-    parser.add_argument("--hard-hit-speed-mph", type=float, default=95.0)
-    parser.add_argument("--min-pitches-per-pitch-type", type=int, default=15)
-    parser.add_argument("--raw-running-prefix", type=str, default=cfg.raw_running_prefix)
-    parser.add_argument("--sprint-speed-min-opp", type=int, default=10)
-    parser.add_argument("--raw-defence-prefix", type=str, default=cfg.raw_defence_prefix)
-    args = parser.parse_args()
-
-    for role in ("batter", "pitcher"):
-        logger.info("Building features for role=%s", role)
-        build_features(
-            bucket=args.bucket,
-            processed_prefix=args.processed_prefix,
-            role=role,
-            feature_prefix=args.feature_prefix,
-            start_year=args.start_year,
-            end_year=args.end_year,
-            min_pitches_pitcher=args.min_pitches_pitcher,
-            min_pitches_batter=args.min_pitches_batter,
-            min_batted_ball_batter=args.min_batted_ball_batter,
-            hard_hit_speed_mph=args.hard_hit_speed_mph,
-            min_pitches_per_pitch_type=args.min_pitches_per_pitch_type,
-            raw_running_prefix=args.raw_running_prefix,
-            sprint_speed_min_opp=args.sprint_speed_min_opp,
-            raw_defence_prefix=args.raw_defence_prefix,
-        )
+    """Deprecated entry name; delegates to bronze→silver pipeline."""
+    run_bronze_to_silver_features_main()

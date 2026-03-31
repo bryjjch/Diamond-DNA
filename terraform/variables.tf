@@ -18,21 +18,27 @@ variable "name_prefix" {
 
 # S3 Configuration
 variable "data_lake_bucket_name" {
-  description = "Name of the S3 bucket for raw data (must be globally unique)"
+  description = "Name of the S3 bucket for medallion data lake objects (must be globally unique)"
   type        = string
 }
 
 # Statcast ingestion prefix
 variable "statcast_ingestion_s3_prefix" {
-  description = "S3 prefix for Statcast data (e.g. raw-data/statcast)"
+  description = "S3 prefix for bronze Statcast data (e.g. bronze/statcast)"
   type        = string
-  default     = "raw-data/statcast"
+  default     = "bronze/statcast"
 }
 
-variable "statcast_processed_s3_prefix" {
-  description = "S3 prefix for processed by-player Statcast data (e.g. processed/statcast)"
+variable "statcast_silver_s3_prefix" {
+  description = "S3 prefix for silver player-year feature tables (e.g. silver/statcast)"
   type        = string
-  default     = "processed/statcast"
+  default     = "silver/statcast"
+}
+
+variable "statcast_gold_s3_prefix" {
+  description = "S3 prefix for gold ML-ready Statcast datasets (e.g. gold/statcast)"
+  type        = string
+  default     = "gold/statcast"
 }
 
 variable "statcast_ingestion_schedule_expression" {

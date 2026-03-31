@@ -4,25 +4,43 @@ variable "name_prefix" {
 }
 
 variable "data_lake_bucket_name" {
-  description = "Name of the S3 bucket for raw data (data lake)"
+  description = "Name of the S3 bucket for medallion data (data lake)"
   type        = string
 }
 
 variable "data_lake_bucket_arn" {
-  description = "ARN of the S3 bucket for raw data"
+  description = "ARN of the S3 bucket for medallion data"
   type        = string
 }
 
 variable "s3_prefix" {
-  description = "S3 prefix/path for Statcast data (e.g. raw-data/statcast)"
+  description = "S3 prefix/path for bronze Statcast data (e.g. bronze/statcast)"
   type        = string
-  default     = "raw-data/statcast"
+  default     = "bronze/statcast"
 }
 
-variable "processed_s3_prefix" {
-  description = "S3 prefix/path for processed by-player Statcast data (e.g. processed/statcast)"
+variable "raw_running_s3_prefix" {
+  description = "S3 prefix for bronze sprint-speed leaderboard objects read by feature build"
   type        = string
-  default     = "processed/statcast"
+  default     = "bronze/statcast_running"
+}
+
+variable "raw_defence_s3_prefix" {
+  description = "S3 prefix for bronze defensive metrics read by feature build"
+  type        = string
+  default     = "bronze/defence"
+}
+
+variable "silver_s3_prefix" {
+  description = "S3 prefix/path for silver player-year feature tables (e.g. silver/statcast)"
+  type        = string
+  default     = "silver/statcast"
+}
+
+variable "gold_s3_prefix" {
+  description = "S3 prefix/path for gold ML-ready Statcast data (e.g. gold/statcast)"
+  type        = string
+  default     = "gold/statcast"
 }
 
 variable "schedule_expression" {
