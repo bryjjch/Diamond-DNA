@@ -11,6 +11,8 @@ from datetime import date
 STATCAST_PITCHES_FILENAME = "statcast_pitches.parquet"
 STATCAST_SPRINT_SPEED_FILENAME = "statcast_sprint_speed.parquet"
 PLAYER_YEAR_FEATURES_FILENAME = "player_year_features.parquet"
+GOLD_FEATURES_FILENAME = "player_year_features_preprocessed.parquet"
+GOLD_PREPROCESSING_METADATA_FILENAME = "preprocessing_metadata.json"
 
 # Bronze defence layer filenames (must match uploads in bronze.defence_ingestion).
 DEFENCE_OAA_PARQUET = "statcast_oaa.parquet"
@@ -43,3 +45,15 @@ def raw_defence_dataset_key(prefix: str, year: int, dataset_filename: str) -> st
     """Single bronze defence dataset object under a year partition."""
     p = prefix.strip("/")
     return f"{p}/year={year}/{dataset_filename}"
+
+
+def gold_player_year_output_key(prefix: str, role: str, year: int) -> str:
+    """Player-year preprocessed feature table (gold): {prefix}/{role}/year=Y/file.parquet."""
+    p = prefix.strip("/")
+    return f"{p}/{role}/year={year}/{GOLD_FEATURES_FILENAME}"
+
+
+def gold_preprocessing_metadata_key(prefix: str, role: str, year: int) -> str:
+    """Gold preprocessing metadata JSON under each role/year partition."""
+    p = prefix.strip("/")
+    return f"{p}/{role}/year={year}/{GOLD_PREPROCESSING_METADATA_FILENAME}"
