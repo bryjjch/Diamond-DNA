@@ -32,9 +32,9 @@ variable "raw_defence_s3_prefix" {
 }
 
 variable "silver_s3_prefix" {
-  description = "S3 prefix/path for silver player-year feature tables (e.g. silver/statcast)"
+  description = "S3 prefix/path for silver player-year feature tables (e.g. silver)"
   type        = string
-  default     = "silver/statcast"
+  default     = "silver"
 }
 
 variable "gold_s3_prefix" {

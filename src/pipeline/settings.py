@@ -30,7 +30,7 @@ class PipelineSettings:
         return cls(
             s3_bucket=bucket,
             raw_statcast_prefix=raw,
-            feature_prefix=_strip_prefix(e.get("FEATURE_PREFIX", "silver/statcast")),
+            feature_prefix=_strip_prefix(e.get("FEATURE_PREFIX", "silver")),
             gold_prefix=_strip_prefix(e.get("GOLD_PREFIX", "gold/statcast")),
             raw_running_prefix=_strip_prefix(
                 e.get("RAW_RUNNING_PREFIX", "bronze/statcast_running")
