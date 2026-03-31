@@ -52,20 +52,41 @@ Command/location:
 - `in_zone_rate`
 - `plate_x_mean`, `plate_x_sd`
 - `plate_z_mean`, `plate_z_sd`
+- `edge_percent`
+- `meatball_percent`
+- `first_pitch_strike_rate`
 
-Stuff (physical):
-- `release_speed_mean`, `release_speed_iqr`
-- `release_spin_rate_mean`, `release_spin_rate_iqr`
+Stuff / shape:
+- `release_speed_max`
+- `fastball_velo_mean`
+- `offspeed_velo_mean`
+- `velo_differential`
+- `release_speed_iqr`
+- `release_spin_rate_iqr`
 - `release_extension_mean`, `release_extension_iqr`
-- `pfx_x_mean`, `pfx_x_iqr`
+- `pfx_x_iqr`
 - `pfx_z_mean`, `pfx_z_iqr`
 
+Platoon + contact profile allowed:
+- `xwoba_allowed_lhb_mean`
+- `xwoba_allowed_rhb_mean`
+- `platoon_xwoba_allowed_diff`
+- `gb_percent_allowed`
+- `ld_percent_allowed`
+- `fb_percent_allowed`
+- `iffb_percent_allowed`
+
 Run value:
-- `delta_pitcher_run_exp_mean` (NA if missing in source parquet)
+- `delta_run_exp_mean` (NA if missing in source parquet)
 
 Pitch repertoire:
 - `pitch_type_<PT>_share` for each pitch type observed in the processed slice
 - `pitch_type_entropy`
+
+Per-pitch-type physical means (for pitch types meeting `--min-pitches-per-pitch-type`):
+- `pt_<PT>_release_speed_mean`
+- `pt_<PT>_release_spin_rate_mean`
+- `pt_<PT>_pfx_x_mean`
 
 ## Batter output features
 Counts:
@@ -91,6 +112,19 @@ Power/value proxies:
 
 Barrel:
 - `barrel_rate` (computed among pitches with non-null `launch_speed` and `launch_angle`)
+
+Spray / batted-ball shape:
+- `pull_percent`
+- `opposite_field_percent`
+- `gb_percent`
+- `ld_percent`
+- `fb_percent`
+- `iffb_percent`
+- `sweet_spot_percent`
+
+Running:
+- `sprint_speed_mean` (from player-year sprint-speed lookup when provided; otherwise
+  from pitch-level `sprint_speed` if present; else NA)
 
 ## Filtering behavior
 Rows may be omitted if sample sizes are too small:
