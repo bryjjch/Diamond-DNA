@@ -129,6 +129,49 @@ def silver_to_gold_preprocessing_handler(event: Dict[str, Any], context: Any) ->
     }
 
 
+def gold_archetype_clustering_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    from ..ml.archetype_clustering import ArchetypeClusteringConfig, build_gold_archetype_clustering
+
+    cy = current_utc_year()
+    cfg = PipelineSettings.from_environ()
+    start_year = event_or_env_int(event, "start_year", "START_YEAR", cy - 1)
+    end_year = event_or_env_int(event, "end_year", "END_YEAR", cy)
+    bucket = event_or_env_str(event, "s3_bucket", "S3_BUCKET", cfg.s3_bucket)
+    gold_prefix = event_or_env_str(event, "gold_prefix", "GOLD_PREFIX", cfg.gold_prefix)
+    role = event_or_env_str(event, "role", "ROLE", "all")
+
+    pca_v_raw = event_or_env_str(event, "pca_variance_threshold", "PCA_VARIANCE_THRESHOLD", "0.9")
+    max_pca_raw = event_or_env_str(event, "max_pca_components", "MAX_PCA_COMPONENTS", "50")
+    k_min_raw = event_or_env_str(event, "k_min", "K_MIN", "2")
+    k_max_cap_raw = event_or_env_str(event, "k_max_cap", "K_MAX_CAP", "25")
+    rs_raw = event_or_env_str(event, "random_state", "RANDOM_STATE", "42")
+    n_init_raw = event_or_env_str(event, "n_init", "N_INIT", "10")
+
+    cluster_cfg = ArchetypeClusteringConfig(
+        pca_variance_threshold=float(pca_v_raw),
+        max_pca_components=int(max_pca_raw),
+        k_min=int(k_min_raw),
+        k_max_cap=int(k_max_cap_raw),
+        random_state=int(rs_raw),
+        n_init=int(n_init_raw),
+    )
+
+    result = build_gold_archetype_clustering(
+        bucket=bucket,
+        gold_prefix=gold_prefix,
+        start_year=start_year,
+        end_year=end_year,
+        role_filter=role,
+        config=cluster_cfg,
+    )
+    status_code = 200 if result.get("status") in ("ok", "no_data") else 400
+    return {
+        "statusCode": status_code,
+        "body": result.get("message", ""),
+        "details": result,
+    }
+
+
 def statcast_by_player_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Backward-compatible name; invokes bronze→silver features."""
     return bronze_to_silver_features_handler(event, context)

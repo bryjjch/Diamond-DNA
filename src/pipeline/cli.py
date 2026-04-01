@@ -243,3 +243,64 @@ def run_silver_to_gold_preprocessing_main() -> None:
         logger.warning(result["message"])
     else:
         logger.info(result["message"])
+
+
+def run_gold_archetype_clustering_main() -> None:
+    from ..ml.archetype_clustering import ArchetypeClusteringConfig, build_gold_archetype_clustering
+
+    cfg = PipelineSettings.from_environ()
+    cy = current_utc_year()
+    parser = argparse.ArgumentParser(
+        description=(
+            "Fit archetype clustering (StandardScaler, PCA, KMeans) on gold preprocessed "
+            "player-year tables and write assignments + model artifacts to S3."
+        )
+    )
+    parser.add_argument("--start-year", type=int, default=cy - 1)
+    parser.add_argument("--end-year", type=int, default=cy)
+    parser.add_argument("--bucket", type=str, default=cfg.s3_bucket)
+    parser.add_argument("--gold-prefix", type=str, default=cfg.gold_prefix)
+    parser.add_argument(
+        "--role",
+        choices=("all", "batter", "pitcher"),
+        default="all",
+        help="Run clustering for both roles or one specific role.",
+    )
+    parser.add_argument("--pca-variance-threshold", type=float, default=0.90)
+    parser.add_argument("--max-pca-components", type=int, default=50)
+    parser.add_argument("--k-min", type=int, default=2)
+    parser.add_argument("--k-max-cap", type=int, default=25)
+    parser.add_argument("--random-state", type=int, default=42)
+    parser.add_argument("--n-init", type=int, default=10)
+    args = parser.parse_args()
+
+    cluster_cfg = ArchetypeClusteringConfig(
+        pca_variance_threshold=args.pca_variance_threshold,
+        max_pca_components=args.max_pca_components,
+        k_min=args.k_min,
+        k_max_cap=args.k_max_cap,
+        random_state=args.random_state,
+        n_init=args.n_init,
+    )
+
+    result = build_gold_archetype_clustering(
+        bucket=args.bucket,
+        gold_prefix=args.gold_prefix,
+        start_year=args.start_year,
+        end_year=args.end_year,
+        role_filter=args.role,
+        config=cluster_cfg,
+    )
+
+    if result["status"] == "error":
+        logger.error(result["message"])
+        raise SystemExit(1)
+    if result["status"] == "no_data":
+        logger.warning(result["message"])
+        for err in result.get("errors", []):
+            logger.warning(err)
+    else:
+        logger.info(result["message"])
+        for err in result.get("errors", []):
+            if err:
+                logger.warning("Partial skip: %s", err)
