@@ -3,6 +3,8 @@ from datetime import date
 from src.pipeline.lake_paths import (
     DEFENCE_OAA_PARQUET,
     feature_player_year_output_key,
+    gold_player_year_output_key,
+    gold_preprocessing_metadata_key,
     raw_defence_dataset_key,
     raw_sprint_speed_key,
     raw_statcast_day_key,
@@ -35,4 +37,16 @@ def test_raw_sprint_speed_key():
 def test_raw_defence_dataset_key():
     assert raw_defence_dataset_key("raw/def", 2024, DEFENCE_OAA_PARQUET) == (
         "raw/def/year=2024/statcast_oaa.parquet"
+    )
+
+
+def test_gold_player_year_output_key():
+    assert gold_player_year_output_key("gold/statcast", "pitcher", 2026) == (
+        "gold/statcast/pitcher/year=2026/player_year_features_preprocessed.parquet"
+    )
+
+
+def test_gold_preprocessing_metadata_key():
+    assert gold_preprocessing_metadata_key("gold/statcast", "batter", 2025) == (
+        "gold/statcast/batter/year=2025/preprocessing_metadata.json"
     )
