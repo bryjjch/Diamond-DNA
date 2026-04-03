@@ -4,9 +4,15 @@ from __future__ import annotations
 
 __all__ = [
     "ArchetypeClusteringConfig",
+    "ArchetypeClusteringConfigsByRole",
+    "ARCHETYPE_CLUSTER_LABELS_BATTER",
+    "ARCHETYPE_CLUSTER_LABELS_BY_ROLE",
+    "ARCHETYPE_CLUSTER_LABELS_PITCHER",
+    "archetype_cluster_label",
     "build_gold_archetype_clustering",
     "fit_archetype_clustering",
     "numeric_feature_columns",
+    "prepare_dataframe_for_archetype_clustering",
 ]
 
 

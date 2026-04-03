@@ -69,7 +69,7 @@ def gold_archetype_assignments_key(prefix: str, role: str, year: int) -> str:
 
 
 def gold_archetype_clustering_model_key(prefix: str, role: str, year: int) -> str:
-    """Serialized scaler + PCA + KMeans (joblib) under each gold role/year partition."""
+    """Serialized scaler + PCA + GaussianMixture (joblib) under each gold role/year partition."""
     p = prefix.strip("/")
     return f"{p}/{role}/year={year}/{ARCHETYPE_CLUSTERING_MODEL_FILENAME}"
 
