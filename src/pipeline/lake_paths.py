@@ -13,6 +13,9 @@ STATCAST_SPRINT_SPEED_FILENAME = "statcast_sprint_speed.parquet"
 PLAYER_YEAR_FEATURES_FILENAME = "player_year_features.parquet"
 GOLD_FEATURES_FILENAME = "player_year_features_preprocessed.parquet"
 GOLD_PREPROCESSING_METADATA_FILENAME = "preprocessing_metadata.json"
+PLAYER_YEAR_ARCHETYPES_FILENAME = "player_year_archetypes.parquet"
+ARCHETYPE_CLUSTERING_MODEL_FILENAME = "archetype_clustering.joblib"
+ARCHETYPE_CLUSTERING_METADATA_FILENAME = "archetype_clustering_metadata.json"
 
 # Bronze defence layer filenames (must match uploads in bronze.defence_ingestion).
 DEFENCE_OAA_PARQUET = "statcast_oaa.parquet"
@@ -57,3 +60,21 @@ def gold_preprocessing_metadata_key(prefix: str, role: str, year: int) -> str:
     """Gold preprocessing metadata JSON under each role/year partition."""
     p = prefix.strip("/")
     return f"{p}/{role}/year={year}/{GOLD_PREPROCESSING_METADATA_FILENAME}"
+
+
+def gold_archetype_assignments_key(prefix: str, role: str, year: int) -> str:
+    """Player-year rows with cluster_id under each gold role/year partition."""
+    p = prefix.strip("/")
+    return f"{p}/{role}/year={year}/{PLAYER_YEAR_ARCHETYPES_FILENAME}"
+
+
+def gold_archetype_clustering_model_key(prefix: str, role: str, year: int) -> str:
+    """Serialized scaler + PCA + GaussianMixture (joblib) under each gold role/year partition."""
+    p = prefix.strip("/")
+    return f"{p}/{role}/year={year}/{ARCHETYPE_CLUSTERING_MODEL_FILENAME}"
+
+
+def gold_archetype_clustering_metadata_key(prefix: str, role: str, year: int) -> str:
+    """Clustering run metadata JSON (K, metrics curves, seeds) under each gold role/year partition."""
+    p = prefix.strip("/")
+    return f"{p}/{role}/year={year}/{ARCHETYPE_CLUSTERING_METADATA_FILENAME}"
