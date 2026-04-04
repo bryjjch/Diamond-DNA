@@ -13,42 +13,6 @@ from .settings import PipelineSettings
 logger = logging.getLogger(__name__)
 
 
-def run_statcast_ingestion_main() -> None:
-    from ..bronze.statcast_ingestion import ingest_date_range
-
-    cfg = PipelineSettings.from_environ()
-    yesterday = yesterday_utc_date_str()
-    parser = argparse.ArgumentParser(
-        description="Ingest Statcast pitch data from pybaseball to S3 (date range; one file per day)"
-    )
-    parser.add_argument("--start-date", type=str, default=yesterday)
-    parser.add_argument("--end-date", type=str, default=yesterday)
-    parser.add_argument("--s3-bucket", type=str, default=cfg.s3_bucket)
-    parser.add_argument(
-        "--s3-prefix",
-        type=str,
-        default=cfg.raw_statcast_prefix,
-        help="S3 prefix for bronze Statcast pitches (env: S3_PREFIX or RAW_PREFIX)",
-    )
-    args = parser.parse_args()
-
-    result = ingest_date_range(args.start_date, args.end_date, args.s3_bucket, args.s3_prefix)
-
-    if result["status"] == "error":
-        logger.error(result["message"])
-        if result.get("errors"):
-            for err in result["errors"]:
-                logger.error(err)
-        sys.exit(1)
-    if result["status"] == "partial":
-        logger.warning(result["message"])
-        for err in result.get("errors", []):
-            logger.warning(err)
-        sys.exit(1)
-    logger.info(result["message"])
-    sys.exit(0)
-
-
 def run_bronze_to_silver_features_main() -> None:
     from ..silver.bronze_to_silver_features import build_bronze_to_silver_features
 

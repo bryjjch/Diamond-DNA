@@ -13,45 +13,6 @@ from .runtime import (
 from .settings import PipelineSettings
 
 
-def statcast_ingestion_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    from ..bronze.statcast_ingestion import ingest_date_range
-
-    y = yesterday_utc_date_str()
-    cfg = PipelineSettings.from_environ()
-    start_date = event_or_env_str(event, "start_date", "START_DATE", y)
-    end_date = event_or_env_str(event, "end_date", "END_DATE", y)
-    s3_bucket = event_or_env_str(event, "s3_bucket", "S3_BUCKET", cfg.s3_bucket)
-    s3_prefix = event_or_env_str(
-        event, "s3_prefix", "S3_PREFIX", cfg.raw_statcast_prefix
-    )
-
-    result = ingest_date_range(start_date, end_date, s3_bucket, s3_prefix)
-
-    if result["status"] == "error":
-        return {
-            "statusCode": 400,
-            "body": result["message"],
-            "errors": result.get("errors", []),
-        }
-    if result["status"] == "partial":
-        return {
-            "statusCode": 207,
-            "body": result["message"],
-            "total_records": result["total_records"],
-            "days_ok": result["days_ok"],
-            "days_no_data": result["days_no_data"],
-            "days_error": result["days_error"],
-            "errors": result.get("errors", []),
-        }
-    return {
-        "statusCode": 200,
-        "body": result["message"],
-        "total_records": result["total_records"],
-        "days_ok": result["days_ok"],
-        "days_no_data": result["days_no_data"],
-    }
-
-
 def bronze_to_silver_features_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     from ..silver.bronze_to_silver_features import build_bronze_to_silver_features
 
