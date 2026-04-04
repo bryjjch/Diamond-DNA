@@ -14,7 +14,7 @@ import pandas as pd
 _HC_HOME_X = 125.42
 _HC_HOME_Y = 198.27
 
-# Horizontal spray angle (degrees), comparable across handedness via `pull_side` below.
+# Fastball pitch types.
 _FASTBALL_PITCH_TYPES: Set[str] = {"FF", "FA", "FT", "SI", "FC"}
 # Junk / non-pitch rows to drop from velocity summaries.
 _EXCLUDED_PITCH_TYPES_MINIMAL: Set[str] = {"UN", "PO", "XX", "IN"}

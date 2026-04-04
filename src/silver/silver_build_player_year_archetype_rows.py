@@ -14,7 +14,7 @@ from typing import Dict, Optional
 import numpy as np
 import pandas as pd
 
-from .archetype_feature_defs import (
+from .silver_archetype_feature_defs import (
     DEFAULT_BARREL_DEF,
     batted_ball_type_rates,
     compute_barrel_flag,

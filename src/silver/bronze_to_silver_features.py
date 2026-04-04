@@ -25,16 +25,16 @@ from ..pipeline.s3_interaction import (
     read_parquet_from_s3,
     write_parquet_to_s3,
 )
-from .build_player_year_archetype_features import (
+from .silver_build_player_year_archetype_rows import (
     _validate_feature_row,
     player_year_features_from_df,
 )
-from .defence_player_year import (
+from .silver_defence_player_year import (
     fangraphs_to_mlbam_map,
     load_defence_metrics_by_player_year,
     merge_defence_into_row,
 )
-from .statcast_features_io import build_sprint_speed_lookups_by_year
+from .silver_sprint_helper import build_sprint_speed_lookups_by_year
 
 logger = logging.getLogger(__name__)
 

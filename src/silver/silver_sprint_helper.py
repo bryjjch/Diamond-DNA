@@ -1,5 +1,5 @@
 """
-S3 I/O helpers for the Statcast player-year feature build (sprint speed side inputs).
+Silver-layer helpers for sprint-speed side inputs (S3 parquet reads, lookup builders).
 """
 
 from __future__ import annotations
