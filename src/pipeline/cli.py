@@ -139,64 +139,6 @@ def run_statcast_running_main() -> None:
     sys.exit(0)
 
 
-def run_defence_ingestion_main() -> None:
-    from ..bronze.defence_ingestion import ingest_year_range as defence_ingest_year_range
-
-    cfg = PipelineSettings.from_environ()
-    cy = current_utc_year()
-    parser = argparse.ArgumentParser(description="Ingest defensive metrics to S3 (year range).")
-    parser.add_argument("--start-year", type=int, default=cy - 3)
-    parser.add_argument("--end-year", type=int, default=cy)
-    parser.add_argument("--s3-bucket", type=str, default=cfg.s3_bucket)
-    parser.add_argument("--s3-prefix", type=str, default=cfg.raw_defence_prefix)
-    parser.add_argument(
-        "--oaa-min-att",
-        type=str,
-        default="q",
-        help='Statcast OAA minimum attempts: "q" (qualified) or an integer.',
-    )
-    parser.add_argument("--arm-min-throws", type=int, default=50)
-    parser.add_argument("--framing-min-called", type=str, default="q")
-    parser.add_argument("--pop-min-2b", type=int, default=5)
-    parser.add_argument("--pop-min-3b", type=int, default=0)
-    parser.add_argument("--fangraphs-qual", type=int, default=None)
-    args = parser.parse_args()
-
-    oaa_min: str | int = args.oaa_min_att
-    if oaa_min != "q" and str(oaa_min).isdigit():
-        oaa_min = int(oaa_min)
-
-    framing_min: str | int = args.framing_min_called
-    if framing_min != "q" and str(framing_min).isdigit():
-        framing_min = int(framing_min)
-
-    result = defence_ingest_year_range(
-        args.start_year,
-        args.end_year,
-        args.s3_bucket,
-        args.s3_prefix,
-        oaa_min_att=oaa_min,
-        arm_min_throws=args.arm_min_throws,
-        framing_min_called=framing_min,
-        pop_min_2b=args.pop_min_2b,
-        pop_min_3b=args.pop_min_3b,
-        fangraphs_qual=args.fangraphs_qual,
-    )
-
-    if result["status"] == "error":
-        logger.error(result["message"])
-        for err in result.get("errors", []):
-            logger.error(err)
-        sys.exit(1)
-    if result["status"] == "partial":
-        logger.warning(result["message"])
-        for err in result.get("errors", []):
-            logger.warning(err)
-        sys.exit(1)
-    logger.info(result["message"])
-    sys.exit(0)
-
-
 def run_build_player_year_archetype_features_main() -> None:
     """Deprecated entry name; delegates to bronze→silver pipeline."""
     run_bronze_to_silver_features_main()

@@ -22,7 +22,7 @@ try:
 except Exception:  # pragma: no cover
     statcast_sprint_speed = None  # type: ignore[assignment]
 
-from ..pipeline.ingest_common import retry_with_backoff
+from .ingest_common import retry_with_backoff
 from ..pipeline.lake_paths import raw_sprint_speed_key
 from ..pipeline.s3_parquet import write_parquet_to_s3
 
