@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import logging
 import os
-import sys
 
 from .runtime import current_utc_year, yesterday_utc_date_str
 from .settings import PipelineSettings
@@ -68,39 +67,6 @@ def run_bronze_to_silver_features_main() -> None:
         logger.warning(result["message"])
     else:
         logger.info(result["message"])
-
-
-def run_statcast_running_main() -> None:
-    from ..bronze.statcast_running_ingestion import ingest_year_range
-
-    cfg = PipelineSettings.from_environ()
-    cy = current_utc_year()
-    parser = argparse.ArgumentParser(
-        description="Ingest Statcast sprint speed leaderboard to S3 (year range)."
-    )
-    parser.add_argument("--start-year", type=int, default=cy - 3)
-    parser.add_argument("--end-year", type=int, default=cy)
-    parser.add_argument("--min-opp", type=int, default=10)
-    parser.add_argument("--s3-bucket", type=str, default=cfg.s3_bucket)
-    parser.add_argument("--s3-prefix", type=str, default=cfg.raw_running_prefix)
-    args = parser.parse_args()
-
-    result = ingest_year_range(
-        args.start_year, args.end_year, args.s3_bucket, args.s3_prefix, min_opp=args.min_opp
-    )
-
-    if result["status"] == "error":
-        logger.error(result["message"])
-        for err in result.get("errors", []):
-            logger.error(err)
-        sys.exit(1)
-    if result["status"] == "partial":
-        logger.warning(result["message"])
-        for err in result.get("errors", []):
-            logger.warning(err)
-        sys.exit(1)
-    logger.info(result["message"])
-    sys.exit(0)
 
 
 def run_build_player_year_archetype_features_main() -> None:

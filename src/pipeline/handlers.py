@@ -248,23 +248,3 @@ def gold_archetype_clustering_handler(event: Dict[str, Any], context: Any) -> Di
 def statcast_by_player_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Backward-compatible name; invokes bronze→silver features."""
     return bronze_to_silver_features_handler(event, context)
-
-
-def statcast_running_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    from ..bronze.statcast_running_ingestion import ingest_year_range
-
-    cy = current_utc_year()
-    cfg = PipelineSettings.from_environ()
-    start_year = event_or_env_int(
-        event, "start_year", "START_YEAR", cy - 3
-    )
-    end_year = event_or_env_int(event, "end_year", "END_YEAR", cy)
-    min_opp = event_or_env_int(event, "min_opp", "MIN_OPP", 10)
-    s3_bucket = event_or_env_str(event, "s3_bucket", "S3_BUCKET", cfg.s3_bucket)
-    s3_prefix = event_or_env_str(
-        event, "s3_prefix", "S3_PREFIX", cfg.raw_running_prefix
-    )
-
-    result = ingest_year_range(start_year, end_year, s3_bucket, s3_prefix, min_opp=min_opp)
-    status_code = 200 if result["status"] == "ok" else (207 if result["status"] == "partial" else 400)
-    return {"statusCode": status_code, **result}
