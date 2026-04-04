@@ -12,12 +12,14 @@ from typing import Dict, Iterable, List, Tuple
 import numpy as np
 import pandas as pd
 
-from ..pipeline.lake_paths import (
+from ..pipeline.s3_interaction import (
     feature_player_year_output_key,
+    get_s3_client,
     gold_player_year_output_key,
     gold_preprocessing_metadata_key,
+    read_parquet_from_s3,
+    write_parquet_to_s3,
 )
-from ..pipeline.s3_parquet import get_s3_client, read_parquet_from_s3, write_parquet_to_s3
 
 logger = logging.getLogger(__name__)
 

@@ -22,9 +22,8 @@ except Exception:
     statcast_sprint_speed = None
 
 from .ingest_common import retry_with_backoff
-from ..pipeline.lake_paths import raw_sprint_speed_key
 from ..pipeline.runtime import current_utc_year, event_or_env_int, event_or_env_str
-from ..pipeline.s3_parquet import write_parquet_to_s3
+from ..pipeline.s3_interaction import raw_sprint_speed_key, write_parquet_to_s3
 from ..pipeline.settings import PipelineSettings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")

@@ -18,7 +18,7 @@ try:
 except Exception:  # pragma: no cover
     chadwick_register = None
 
-from ..pipeline.lake_paths import (
+from ..pipeline.s3_interaction import (
     DEFENCE_ARM_STRENGTH_PARQUET,
     DEFENCE_CATCHER_FRAMING_PARQUET,
     DEFENCE_CATCHER_POPTIME_PARQUET,
@@ -26,8 +26,8 @@ from ..pipeline.lake_paths import (
     DEFENCE_OAA_PARQUET,
     DEFENCE_OUTFIELD_CATCH_PARQUET,
     raw_defence_dataset_key,
+    read_parquet_from_s3,
 )
-from ..pipeline.s3_parquet import read_parquet_from_s3
 
 logger = logging.getLogger(__name__)
 

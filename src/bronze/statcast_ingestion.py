@@ -16,9 +16,9 @@ import pandas as pd
 from pybaseball import statcast
 
 from .ingest_common import retry_with_backoff
-from ..pipeline.lake_paths import raw_statcast_day_key
+from ..pipeline.s3_interaction import raw_statcast_day_key
 from ..pipeline.runtime import event_or_env_str, yesterday_utc_date_str
-from ..pipeline.s3_parquet import write_parquet_to_s3
+from ..pipeline.s3_interaction import write_parquet_to_s3
 from ..pipeline.settings import PipelineSettings
 
 # Configure logging

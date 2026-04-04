@@ -1,6 +1,6 @@
 from datetime import date
 
-from src.pipeline.lake_paths import (
+from src.pipeline.s3_interaction import (
     DEFENCE_OAA_PARQUET,
     feature_player_year_output_key,
     gold_archetype_assignments_key,

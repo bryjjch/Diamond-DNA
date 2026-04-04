@@ -21,13 +21,15 @@ from sklearn.metrics import davies_bouldin_score, silhouette_score
 from sklearn.preprocessing import StandardScaler
 
 from ..gold.silver_to_gold_preprocessing import ID_COLUMNS
-from ..pipeline.lake_paths import (
+from ..pipeline.s3_interaction import (
+    get_s3_client,
     gold_archetype_assignments_key,
     gold_archetype_clustering_metadata_key,
     gold_archetype_clustering_model_key,
     gold_player_year_output_key,
+    read_parquet_from_s3,
+    write_parquet_to_s3,
 )
-from ..pipeline.s3_parquet import get_s3_client, read_parquet_from_s3, write_parquet_to_s3
 
 logger = logging.getLogger(__name__)
 

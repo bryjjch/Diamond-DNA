@@ -39,8 +39,12 @@ except Exception:
 
 from .ingest_common import retry_with_backoff
 
-# Lake paths
-from ..pipeline.lake_paths import (
+from ..pipeline.runtime import (
+    current_utc_year,
+    event_or_env_int,
+    event_or_env_str,
+)
+from ..pipeline.s3_interaction import (
     DEFENCE_ARM_STRENGTH_PARQUET,
     DEFENCE_CATCHER_FRAMING_PARQUET,
     DEFENCE_CATCHER_POPTIME_PARQUET,
@@ -48,14 +52,9 @@ from ..pipeline.lake_paths import (
     DEFENCE_OAA_PARQUET,
     DEFENCE_OUTFIELD_CATCH_PARQUET,
     raw_defence_dataset_key,
-)
-from ..pipeline.runtime import (
-    current_utc_year,
-    event_or_env_int,
-    event_or_env_str,
+    write_parquet_to_s3,
 )
 from ..pipeline.settings import PipelineSettings
-from ..pipeline.s3_parquet import write_parquet_to_s3
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
