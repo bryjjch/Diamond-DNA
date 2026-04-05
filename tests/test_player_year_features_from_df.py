@@ -40,6 +40,7 @@ def test_player_year_features_from_df_pitcher_minimal():
     assert row["role"] == "pitcher"
     assert row["player_id"] == 12345
     assert row["year"] == 2024
+    assert row["player_name"] == ""
     assert row["n_pitches_total"] == 600
 
 
@@ -77,4 +78,5 @@ def test_player_year_features_from_df_batter_minimal():
         sprint_speed_lookup={999: 28.5},
     )
     assert row is not None
+    assert row["player_name"] == ""
     assert row["sprint_speed_mean"] == 28.5

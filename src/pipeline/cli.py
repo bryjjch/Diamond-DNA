@@ -182,6 +182,83 @@ def run_gold_archetype_clustering_main() -> None:
                 logger.warning("Partial skip: %s", err)
 
 
+def run_gold_player_similarity_main() -> None:
+    from ..ml.player_similarity import PlayerSimilarityConfig, build_gold_player_similarity
+
+    cfg = PipelineSettings.from_environ()
+    cy = current_utc_year()
+    parser = argparse.ArgumentParser(
+        description=(
+            "Build K-nearest neighbor similarity in PCA space using archetype_clustering.joblib "
+            "per gold role/year and write long-form neighbor Parquet + metadata to S3."
+        )
+    )
+    parser.add_argument("--start-year", type=int, default=cy - 1)
+    parser.add_argument("--end-year", type=int, default=cy)
+    parser.add_argument("--bucket", type=str, default=cfg.s3_bucket)
+    parser.add_argument("--gold-prefix", type=str, default=cfg.gold_prefix)
+    parser.add_argument(
+        "--role",
+        choices=("all", "batter", "pitcher"),
+        default="all",
+        help="Run similarity for both roles or one specific role.",
+    )
+    parser.add_argument(
+        "--k-neighbors",
+        type=int,
+        default=10,
+        help="Number of nearest other players per row (default: 10).",
+    )
+    parser.add_argument(
+        "--metric",
+        choices=("minkowski", "euclidean", "manhattan", "chebyshev"),
+        default="minkowski",
+        help="sklearn NearestNeighbors metric (default: minkowski with p=2 = Euclidean).",
+    )
+    parser.add_argument(
+        "--minkowski-p",
+        type=int,
+        default=2,
+        help="Minkowski p when --metric=minkowski (default: 2).",
+    )
+    parser.add_argument(
+        "--algorithm",
+        type=str,
+        default="auto",
+        help="sklearn NearestNeighbors algorithm (default: auto).",
+    )
+    args = parser.parse_args()
+
+    sim_cfg = PlayerSimilarityConfig(
+        k_neighbors=args.k_neighbors,
+        metric=args.metric,
+        minkowski_p=args.minkowski_p,
+        algorithm=args.algorithm,
+    )
+
+    result = build_gold_player_similarity(
+        bucket=args.bucket,
+        gold_prefix=args.gold_prefix,
+        start_year=args.start_year,
+        end_year=args.end_year,
+        role_filter=args.role,
+        config=sim_cfg,
+    )
+
+    if result["status"] == "error":
+        logger.error(result["message"])
+        raise SystemExit(1)
+    if result["status"] == "no_data":
+        logger.warning(result["message"])
+        for err in result.get("errors", []):
+            logger.warning(err)
+    else:
+        logger.info(result["message"])
+        for err in result.get("errors", []):
+            if err:
+                logger.warning("Partial skip: %s", err)
+
+
 def run_defence_ingestion_main() -> None:
     from ..bronze.defence_ingestion import ingest_year_range
 

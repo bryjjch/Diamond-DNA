@@ -36,7 +36,13 @@ logger = logging.getLogger(__name__)
 EXCLUDED_FROM_CLUSTERING = frozenset({"n_pitches_total"})
 MIN_SAMPLES_FOR_CLUSTERING = 3
 
-ARCHETYPE_CLUSTER_INDEX: tuple[str, ...] = ("player_id", "year", "role", "n_pitches_total")
+ARCHETYPE_CLUSTER_INDEX: tuple[str, ...] = (
+    "player_id",
+    "player_name",
+    "year",
+    "role",
+    "n_pitches_total",
+)
 
 # Display names for cluster_id 0..5 in the canonical six-component GMM archetypes.
 ARCHETYPE_CLUSTER_LABELS_BATTER: Dict[int, str] = {
@@ -78,6 +84,8 @@ def archetype_cluster_label(role: str, cluster_id: int) -> str:
 def prepare_dataframe_for_archetype_clustering(df: pd.DataFrame) -> pd.DataFrame:
     """
     Move identity / volume columns to the index so they are never used as model features.
+
+    Uses ``ARCHETYPE_CLUSTER_INDEX`` order; any of those columns missing in ``df`` are skipped.
 
     Call this before ``numeric_feature_columns`` / scaling when fitting or exploring.
     """
@@ -134,9 +142,9 @@ def numeric_feature_columns(df: pd.DataFrame) -> List[str]:
     """
     Numeric columns used for PCA / mixture model.
 
-    Identity / volume fields are excluded here: ``player_id``,
+    Identity / volume fields are excluded here: ``player_id``, ``player_name``,
     ``year``, ``role``, and ``n_pitches_total`` (moved to the index first via
-    ``prepare_dataframe_for_archetype_clustering``).
+    ``prepare_dataframe_for_archetype_clustering`` when those columns exist).
     """
     id_set = set(ID_COLUMNS) | set(EXCLUDED_FROM_CLUSTERING)
     numeric = df.select_dtypes(include=[np.number]).columns.tolist()
@@ -280,7 +288,7 @@ def fit_archetype_clustering(
         "feature_columns_sha256_16": feature_hash,
         "clustering_index_columns": index_cols,
         "feature_exclusion_rules": [
-            "player_id, year, role, n_pitches_total → not used as PCA/GMM features (index via prepare_dataframe_for_archetype_clustering when present as columns)",
+            "player_id, player_name, year, role, n_pitches_total → not used as PCA/GMM features (index via prepare_dataframe_for_archetype_clustering when present as columns)",
             "All other column selection for clustering is done in silver_to_gold_preprocessing (archetype-training drop pass)",
         ],
         "pca_n_components": n_comp,

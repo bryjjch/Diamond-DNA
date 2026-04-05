@@ -32,6 +32,10 @@ from .silver_defence_player_year import (
     load_defence_metrics_by_player_year,
     merge_defence_into_row,
 )
+from .silver_player_names import (
+    build_mlbam_statcast_style_name_map,
+    resolve_mlbam_display_name,
+)
 from .silver_sprint_helper import build_sprint_speed_lookups_by_year
 
 logger = logging.getLogger(__name__)
@@ -185,6 +189,19 @@ def build_bronze_to_silver_features(
     year_lo = int(full_raw["year"].min())
     year_hi = int(full_raw["year"].max())
 
+    chadwick_df: Optional[pd.DataFrame] = None
+    name_by_mlbam: Dict[int, str] = {}
+    try:
+        from pybaseball import chadwick_register as _chadwick_register
+
+        chadwick_df = _chadwick_register()
+        name_by_mlbam = build_mlbam_statcast_style_name_map(chadwick_df)
+    except Exception as exc:
+        logger.warning(
+            "Could not load Chadwick register (%s); pitcher names may be blank and FanGraphs id map falls back to a separate load.",
+            exc,
+        )
+
     years_written: List[int] = []
     rows_written = 0
 
@@ -203,7 +220,7 @@ def build_bronze_to_silver_features(
         # Build the defence metrics by year.
         defence_by_year: Dict[int, Dict[int, Dict[str, float]]] = {}
         if role == "batter":
-            fg_map = fangraphs_to_mlbam_map()
+            fg_map = fangraphs_to_mlbam_map(chadwick_df) if chadwick_df is not None else fangraphs_to_mlbam_map()
             for y in range(year_lo, year_hi + 1):
                 defence_by_year[y] = load_defence_metrics_by_player_year(
                     bucket,
@@ -228,12 +245,15 @@ def build_bronze_to_silver_features(
                 y = int(year)
                 df_work = _dedupe_pitches(df_year.copy())
 
+                display_name = resolve_mlbam_display_name(pid, name_by_mlbam)
+
                 # Build the player-year features from the deduplicated data (sprint speed lookup included for batters).
                 row = player_year_features_from_df(
                     df=df_work,
                     role=role,
                     player_id=pid,
                     year=y,
+                    player_name=display_name,
                     min_pitches_pitcher=min_pitches_pitcher,
                     min_pitches_batter=min_pitches_batter,
                     min_batted_ball_batter=min_batted_ball_batter,

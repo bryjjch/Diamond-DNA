@@ -168,6 +168,65 @@ def gold_archetype_clustering_handler(event: Dict[str, Any], context: Any) -> Di
     }
 
 
+def gold_player_similarity_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    from ..ml.player_similarity import PlayerSimilarityConfig, build_gold_player_similarity
+
+    cy = current_utc_year()
+    cfg = PipelineSettings.from_environ()
+    start_year = event_or_env_int(event, "start_year", "START_YEAR", cy - 1)
+    end_year = event_or_env_int(event, "end_year", "END_YEAR", cy)
+    bucket = event_or_env_str(event, "s3_bucket", "S3_BUCKET", cfg.s3_bucket)
+    gold_prefix = event_or_env_str(event, "gold_prefix", "GOLD_PREFIX", cfg.gold_prefix)
+    role = event_or_env_str(event, "role", "ROLE", "all")
+
+    k_raw = str(event_or_env_str(event, "k_neighbors", "K_NEIGHBORS", "10")).strip()
+    metric = str(
+        event_or_env_str(event, "metric", "METRIC", "minkowski")
+    ).strip().lower()
+    p_raw = str(event_or_env_str(event, "minkowski_p", "MINKOWSKI_P", "2")).strip()
+    algorithm = str(event_or_env_str(event, "algorithm", "ALGORITHM", "auto")).strip()
+
+    valid_metrics = ("minkowski", "euclidean", "manhattan", "chebyshev")
+    if metric not in valid_metrics:
+        return {
+            "statusCode": 400,
+            "body": f"METRIC must be one of {list(valid_metrics)}; got {metric!r}.",
+            "details": {},
+        }
+
+    try:
+        k_neighbors = int(k_raw)
+        minkowski_p = int(p_raw)
+    except ValueError:
+        return {
+            "statusCode": 400,
+            "body": "K_NEIGHBORS and MINKOWSKI_P must be integers when set.",
+            "details": {},
+        }
+
+    sim_cfg = PlayerSimilarityConfig(
+        k_neighbors=k_neighbors,
+        metric=metric,
+        minkowski_p=minkowski_p,
+        algorithm=algorithm,
+    )
+
+    result = build_gold_player_similarity(
+        bucket=bucket,
+        gold_prefix=gold_prefix,
+        start_year=start_year,
+        end_year=end_year,
+        role_filter=role,
+        config=sim_cfg,
+    )
+    status_code = 200 if result.get("status") in ("ok", "no_data") else 400
+    return {
+        "statusCode": status_code,
+        "body": result.get("message", ""),
+        "details": result,
+    }
+
+
 def _parse_defence_min_qual_str(s: str, default: str | int) -> str | int:
     raw = str(s).strip() if s is not None else ""
     if raw == "":

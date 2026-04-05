@@ -22,6 +22,8 @@ GOLD_PREPROCESSING_METADATA_FILENAME = "preprocessing_metadata.json"
 PLAYER_YEAR_ARCHETYPES_FILENAME = "player_year_archetypes.parquet"
 ARCHETYPE_CLUSTERING_MODEL_FILENAME = "archetype_clustering.joblib"
 ARCHETYPE_CLUSTERING_METADATA_FILENAME = "archetype_clustering_metadata.json"
+PLAYER_YEAR_SIMILAR_NEIGHBORS_FILENAME = "player_year_similar_neighbors.parquet"
+PLAYER_SIMILARITY_METADATA_FILENAME = "player_similarity_metadata.json"
 
 # Bronze defence layer filenames (must match uploads in bronze.defence_ingestion).
 DEFENCE_OAA_PARQUET = "statcast_oaa.parquet"
@@ -84,6 +86,18 @@ def gold_archetype_clustering_metadata_key(prefix: str, role: str, year: int) ->
     """Clustering run metadata JSON (K, metrics curves, seeds) under each gold role/year partition."""
     p = prefix.strip("/")
     return f"{p}/{role}/year={year}/{ARCHETYPE_CLUSTERING_METADATA_FILENAME}"
+
+
+def gold_player_similar_neighbors_key(prefix: str, role: str, year: int) -> str:
+    """Long-form KNN neighbor rows (Parquet) under each gold role/year partition."""
+    p = prefix.strip("/")
+    return f"{p}/{role}/year={year}/{PLAYER_YEAR_SIMILAR_NEIGHBORS_FILENAME}"
+
+
+def gold_player_similarity_metadata_key(prefix: str, role: str, year: int) -> str:
+    """KNN similarity run metadata JSON under each gold role/year partition."""
+    p = prefix.strip("/")
+    return f"{p}/{role}/year={year}/{PLAYER_SIMILARITY_METADATA_FILENAME}"
 
 
 # --- S3 Parquet I/O ---
