@@ -1,5 +1,5 @@
 """
-S3 I/O helpers for the Statcast player-year feature build (sprint speed side inputs).
+Silver-layer helpers for sprint-speed side inputs (S3 parquet reads, lookup builders).
 """
 
 from __future__ import annotations
@@ -9,8 +9,7 @@ from typing import Dict
 
 import pandas as pd
 
-from ..pipeline.lake_paths import raw_sprint_speed_key
-from ..pipeline.s3_parquet import read_parquet_from_s3
+from ..pipeline.s3_interaction import raw_sprint_speed_key, read_parquet_from_s3
 
 logger = logging.getLogger(__name__)
 
@@ -53,9 +52,11 @@ def build_sprint_speed_lookups_by_year(
         tmp = running_df.copy()
         tmp[id_col] = pd.to_numeric(tmp[id_col], errors="coerce")
         tmp[ss_col] = pd.to_numeric(tmp[ss_col], errors="coerce")
+        # Filter out rows with missing id or sprint speed.
         tmp = tmp[tmp[id_col].notna() & tmp[ss_col].notna()]
         if opp_col and opp_col in tmp.columns:
             tmp[opp_col] = pd.to_numeric(tmp[opp_col], errors="coerce")
+            # Filter out rows with less than the minimum number of opportunities.
             tmp = tmp[(tmp[opp_col].isna()) | (tmp[opp_col] >= sprint_speed_min_opp)]
 
         sprint_lookup_by_year[y] = {int(pid): float(ss) for pid, ss in zip(tmp[id_col], tmp[ss_col])}

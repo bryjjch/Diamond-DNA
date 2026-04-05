@@ -1,44 +1,48 @@
 #!/usr/bin/env python3
 """
-Bronze → silver: build player-year archetype feature tables directly from daily Statcast bronze.
+Bronze → silver: build player-year archetype feature tables from bronze data.
 
-Reads daily parquet under ``{bronze_prefix}/year=Y/date=YYYY-MM-DD/statcast_pitches.parquet``,
-groups in memory by (role, player_id, year), and writes
-``{silver_prefix}/{role}/year=Y/player_year_features.parquet``.
+Reads bronze data from the S3 bucket and writes silver data to the S3 bucket.
 
 For scheduled runs that only pass ``end_date`` (e.g. yesterday), use ``year_to_date=True`` so
 bronze is loaded from Jan 1 through ``end_date`` for each affected calendar year—matching
-season-to-date aggregates without a separate by-player layer.
+season-to-date aggregates.
 """
 
 from __future__ import annotations
 
 import logging
 from datetime import date, datetime, timedelta
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import pandas as pd
 
-from ..pipeline.lake_paths import feature_player_year_output_key, raw_statcast_day_key
-from ..pipeline.s3_parquet import read_parquet_from_s3, write_parquet_to_s3
-from .build_player_year_archetype_features import (
+from ..pipeline.s3_interaction import (
+    feature_player_year_output_key,
+    raw_statcast_day_key,
+    read_parquet_from_s3,
+    write_parquet_to_s3,
+)
+from .silver_build_player_year_archetype_rows import (
     _validate_feature_row,
     player_year_features_from_df,
 )
-from .defence_player_year import (
+from .silver_defence_player_year import (
     fangraphs_to_mlbam_map,
     load_defence_metrics_by_player_year,
     merge_defence_into_row,
 )
-from .statcast_features_io import build_sprint_speed_lookups_by_year
+from .silver_sprint_helper import build_sprint_speed_lookups_by_year
 
 logger = logging.getLogger(__name__)
 
 def _parse_date(value: str) -> date:
+    """Parse a date string and return a date object."""
     return datetime.strptime(value, "%Y-%m-%d").date()
 
 
 def _date_range(start: date, end: date) -> Iterable[date]:
+    """Generate a range of dates between start and end."""
     current = start
     while current <= end:
         yield current
@@ -72,6 +76,7 @@ def normalize_statcast_bronze_df(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _dedupe_pitches(df: pd.DataFrame) -> pd.DataFrame:
+    """Deduplicate pitches by game_pk, pitch_number, and at_bat_number."""
     dedup_cols = [c for c in ("game_pk", "pitch_number", "at_bat_number") if c in df.columns]
     if not dedup_cols:
         return df
@@ -151,6 +156,7 @@ def build_bronze_to_silver_features(
         year_to_date,
     )
 
+    # Load the bronze Statcast data.
     full_raw = load_bronze_statcast_range(bucket, bronze_statcast_prefix, bronze_start, bronze_end)
     if full_raw is None or full_raw.empty:
         msg = f"No bronze Statcast data between {bronze_start} and {bronze_end}"
@@ -183,6 +189,7 @@ def build_bronze_to_silver_features(
     rows_written = 0
 
     for role in ("batter", "pitcher"):
+        # Build the sprint speed lookup by year.
         sprint_lookup_by_year: Dict[int, Dict[int, float]] = {}
         if role == "batter":
             sprint_lookup_by_year = build_sprint_speed_lookups_by_year(
@@ -193,6 +200,7 @@ def build_bronze_to_silver_features(
                 sprint_speed_min_opp,
             )
 
+        # Build the defence metrics by year.
         defence_by_year: Dict[int, Dict[int, Dict[str, float]]] = {}
         if role == "batter":
             fg_map = fangraphs_to_mlbam_map()
@@ -205,6 +213,7 @@ def build_bronze_to_silver_features(
                 )
 
         feature_rows: List[Dict[str, object]] = []
+        # Group the full raw data by role and drop missing values.
         grouped = full_raw.groupby(role, dropna=True)
         n_players = grouped.ngroups
         for idx, (player_id, player_df) in enumerate(grouped):
@@ -214,10 +223,12 @@ def build_bronze_to_silver_features(
             if (idx % 100) == 0:
                 logger.info("Role %s: processing player %d / %d (player_id=%s)", role, idx + 1, n_players, pid)
 
+            # Group the player data by year and deduplicate pitches.
             for year, df_year in player_df.groupby("year"):
                 y = int(year)
                 df_work = _dedupe_pitches(df_year.copy())
 
+                # Build the player-year features from the deduplicated data (sprint speed lookup included for batters).
                 row = player_year_features_from_df(
                     df=df_work,
                     role=role,
@@ -233,9 +244,11 @@ def build_bronze_to_silver_features(
                 if row is None:
                     continue
 
+                # Merge the defence metrics into the row.
                 if role == "batter":
                     merge_defence_into_row(row, defence_by_year.get(y, {}))
 
+                # Validate the feature row.
                 _validate_feature_row(row, role=role)
                 feature_rows.append(row)
 
@@ -244,6 +257,7 @@ def build_bronze_to_silver_features(
             continue
 
         features_df = pd.DataFrame(feature_rows)
+        # Write the feature rows to the S3 bucket.
         for y in range(year_lo, year_hi + 1):
             df_year = features_df[features_df["year"] == y]
             if df_year.empty:
@@ -283,7 +297,7 @@ def main() -> None:
     run_bronze_to_silver_features_main()
 
 
-def handler(event: dict, context) -> dict:
+def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     from ..pipeline.handlers import bronze_to_silver_features_handler
 
     return bronze_to_silver_features_handler(event, context)

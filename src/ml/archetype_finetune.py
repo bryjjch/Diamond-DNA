@@ -1,10 +1,5 @@
 """
-Offline exploration for PCA dimensionality and cluster count (KMeans and GMM sweeps).
-
-Production ``build_gold_archetype_clustering`` uses GaussianMixture; KMeans helpers remain
-for notebooks that document the abandoned KMeans path.
-
-Uses the same frame preparation and feature column rules as production clustering.
+Helper functions for offline exploration of PCA dimensionality and cluster count (KMeans and GMM sweeps).
 """
 
 from __future__ import annotations
@@ -27,14 +22,18 @@ from .archetype_clustering import (
 
 def scaled_feature_matrix(df: pd.DataFrame) -> Tuple[np.ndarray, List[str], StandardScaler]:
     """Same indexing and feature columns as ``fit_archetype_clustering``."""
+    # Prepare the dataframe for archetype clustering.
     df_i = prepare_dataframe_for_archetype_clustering(df)
+    # Get the numeric feature columns.
     cols = numeric_feature_columns(df_i)
     if not cols:
         raise ValueError("No numeric feature columns.")
     X = df_i[cols].to_numpy(dtype=np.float64, copy=True)
     if np.isnan(X).any():
         raise ValueError("NaN in feature matrix.")
+    # Fit the scaler.
     scaler = StandardScaler()
+    # Transform the features to scaled space.
     X_scaled = scaler.fit_transform(X)
     return X_scaled, cols, scaler
 
@@ -47,7 +46,9 @@ def pca_cumulative_variance(
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Return (cumulative explained variance, per-component ratios) for up to ``max_components`` PCs."""
     n_samples, n_features = X_scaled.shape
+    # Calculate the number of components to keep.
     n_comp = min(max_components, n_features, max(1, n_samples - 1))
+    # Fit the PCA model.
     pca = PCA(n_components=n_comp, random_state=random_state)
     pca.fit(X_scaled)
     ratios = pca.explained_variance_ratio_
@@ -64,11 +65,15 @@ def k_sweep_for_pca_space(
     n_init: int,
 ) -> List[Dict[str, Any]]:
     """Inertia / silhouette / Davies–Bouldin for each k on fixed PCA coordinates."""
+    # Get the number of samples.
     n_samples = X_pca.shape[0]
+    # Clamp the maximum number of clusters.
     k_max = min(k_max, n_samples - 1)
+    # Clamp the minimum number of clusters.
     k_max = max(k_max, k_min)
     curve: List[Dict[str, Any]] = []
     for k in range(k_min, k_max + 1):
+        # Fit the KMeans model.
         km = KMeans(n_clusters=k, random_state=random_state, n_init=n_init)
         labels = km.fit_predict(X_pca)
         sil = float("nan")
@@ -109,14 +114,18 @@ def grid_sweep_pca_and_k(
     """
     rows: List[Dict[str, Any]] = []
     n_samples, n_features = X_scaled.shape
+    # For each candidate PCA size, fit PCA → transform → sweep k.
     for npc in pca_n_components_list:
         max_rank = min(n_features, max(1, n_samples - 1))
         n_use = min(int(npc), max_rank)
         if n_use < 1:
             continue
+        # Fit the PCA model.
         pca = PCA(n_components=n_use, random_state=random_state)
+        # Transform the features to PCA space.
         X_pca = pca.fit_transform(X_scaled)
         total_var = float(np.sum(pca.explained_variance_ratio_))
+        # Sweep k.
         for m in k_sweep_for_pca_space(
             X_pca, k_min=k_min, k_max=k_max, random_state=random_state, n_init=n_init
         ):
@@ -140,11 +149,14 @@ def gmm_sweep_for_pca_space(
     covariance_type: str = "full",
 ) -> List[Dict[str, Any]]:
     """AIC / BIC / silhouette / Davies–Bouldin for each n_components on fixed PCA coordinates."""
+    # Get the number of samples.
     n_samples = X_pca.shape[0]
+    # Clamp the maximum number of clusters.
     k_max = min(k_max, n_samples - 1)
     k_max = max(k_max, k_min)
     curve: List[Dict[str, Any]] = []
     for k in range(k_min, k_max + 1):
+        # Fit the Gaussian Mixture model.
         gmm = GaussianMixture(
             n_components=k,
             covariance_type=covariance_type,
@@ -152,7 +164,9 @@ def gmm_sweep_for_pca_space(
             n_init=n_init,
         )
         gmm.fit(X_pca)
+        # Get the cluster labels.
         labels = gmm.predict(X_pca)
+        # Calculate the silhouette score.
         sil = float("nan")
         if k >= 2 and n_samples > k:
             try:
@@ -192,16 +206,22 @@ def grid_sweep_pca_and_gmm(
 
     Returns a long table with columns including ``pca_n_components``, ``k`` (n_components), metrics.
     """
+    # For each candidate PCA size, fit PCA → transform → GMM sweep over n_components.
     rows: List[Dict[str, Any]] = []
+    # Get the number of samples and features.
     n_samples, n_features = X_scaled.shape
     for npc in pca_n_components_list:
+        # Calculate the maximum rank.
         max_rank = min(n_features, max(1, n_samples - 1))
         n_use = min(int(npc), max_rank)
         if n_use < 1:
             continue
+        # Fit the PCA model.
         pca = PCA(n_components=n_use, random_state=random_state)
+        # Transform the features to PCA space.
         X_pca = pca.fit_transform(X_scaled)
         total_var = float(np.sum(pca.explained_variance_ratio_))
+        # Sweep k.
         for m in gmm_sweep_for_pca_space(
             X_pca,
             k_min=k_min,

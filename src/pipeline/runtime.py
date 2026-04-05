@@ -8,14 +8,23 @@ from typing import Any, Mapping, Optional
 
 
 def yesterday_utc_date_str() -> str:
+    """
+    Get the UTC date string for yesterday.
+    """
     return (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
 
 
 def current_utc_year() -> int:
+    """
+    Get the current UTC year.
+    """
     return datetime.now(timezone.utc).year
 
 
 def _get_event(event: Any) -> Optional[Mapping[str, Any]]:
+    """
+    Get the event as a dictionary.
+    """
     if isinstance(event, dict):
         return event
     return None
@@ -29,6 +38,9 @@ def event_or_env_str(
     *,
     environ: Optional[Mapping[str, str]] = None,
 ) -> str:
+    """
+    Get the event or environment string value.
+    """
     ev = _get_event(event)
     if ev is not None:
         v = ev.get(event_key)
@@ -46,6 +58,9 @@ def event_or_env_int(
     *,
     environ: Optional[Mapping[str, str]] = None,
 ) -> int:
+    """
+    Get the event or environment integer value.
+    """
     raw = event_or_env_str(event, event_key, env_key, "", environ=environ)
     if raw == "":
         return default
@@ -53,11 +68,17 @@ def event_or_env_int(
 
 
 def env_str(env_key: str, default: str, *, environ: Optional[Mapping[str, str]] = None) -> str:
+    """
+    Get the environment string value.
+    """
     env = environ if environ is not None else os.environ
     return env.get(env_key, default)
 
 
 def env_int(env_key: str, default: int, *, environ: Optional[Mapping[str, str]] = None) -> int:
+    """
+    Get the environment integer value.
+    """
     env = environ if environ is not None else os.environ
     v = env.get(env_key)
     if v is None or str(v).strip() == "":

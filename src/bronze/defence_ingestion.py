@@ -8,10 +8,6 @@ and uploads Parquet under:
   {s3_prefix}/year=YYYY/<dataset>.parquet
 
 Default s3_prefix: bronze/defence
-
-Note: pybaseball does not expose ``statcast_leaderboard`` on all releases; arm strength is
-pulled from the Savant arm-strength leaderboard CSV (equivalent to the site export).
-Catcher framing uses the same Savant endpoint with a UTF-8-SIG CSV read for reliability.
 """
 
 from __future__ import annotations
@@ -19,7 +15,7 @@ from __future__ import annotations
 import io
 import logging
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Any, List, Optional
 
 import pandas as pd
 import requests
@@ -32,15 +28,16 @@ try:
         statcast_outs_above_average,
     )
     from pybaseball.utils import sanitize_statcast_columns
-except Exception:  # pragma: no cover
-    fielding_stats = None  # type: ignore[assignment]
-    statcast_catcher_poptime = None  # type: ignore[assignment]
-    statcast_outfield_catch_prob = None  # type: ignore[assignment]
-    statcast_outs_above_average = None  # type: ignore[assignment]
-    sanitize_statcast_columns = None  # type: ignore[assignment]
+except Exception:
+    fielding_stats = None
+    statcast_catcher_poptime = None
+    statcast_outfield_catch_prob = None
+    statcast_outs_above_average = None
+    sanitize_statcast_columns = None
 
-from ..pipeline.ingest_common import retry_with_backoff
-from ..pipeline.lake_paths import (
+from .ingest_common import retry_with_backoff
+
+from ..pipeline.s3_interaction import (
     DEFENCE_ARM_STRENGTH_PARQUET,
     DEFENCE_CATCHER_FRAMING_PARQUET,
     DEFENCE_CATCHER_POPTIME_PARQUET,
@@ -48,8 +45,8 @@ from ..pipeline.lake_paths import (
     DEFENCE_OAA_PARQUET,
     DEFENCE_OUTFIELD_CATCH_PARQUET,
     raw_defence_dataset_key,
+    write_parquet_to_s3,
 )
-from ..pipeline.s3_parquet import write_parquet_to_s3
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -69,6 +66,7 @@ SAVANT_CATCHER_FRAMING_CSV = (
 
 
 def _read_savant_csv(url: str) -> pd.DataFrame:
+    """Read a Savant CSV file from the given URL and return a pandas DataFrame."""
     res = requests.get(url, timeout=120)
     res.raise_for_status()
     text = res.content.decode("utf-8-sig")
@@ -77,8 +75,7 @@ def _read_savant_csv(url: str) -> pd.DataFrame:
 
 def fetch_statcast_arm_strength(year: int, *, min_throws: int = 50) -> pd.DataFrame:
     """
-    Arm strength leaderboard (Savant). ``max_arm_strength`` is derived from the strongest throws
-    (top fraction of attempts by position); treat as the published "95th-style" arm metric.
+    Arm strength leaderboard (Savant).
     """
     df = _read_savant_csv(SAVANT_ARM_STRENGTH_CSV.format(year=year, min_throws=min_throws))
     if sanitize_statcast_columns is not None:
@@ -87,6 +84,9 @@ def fetch_statcast_arm_strength(year: int, *, min_throws: int = 50) -> pd.DataFr
 
 
 def fetch_statcast_catcher_framing_robust(year: int, *, min_called_p: str | int = "q") -> pd.DataFrame:
+    """
+    Catcher framing leaderboard (Savant).
+    """
     url = SAVANT_CATCHER_FRAMING_CSV.format(year=year, min_called_p=min_called_p)
     df = _read_savant_csv(url)
     if sanitize_statcast_columns is not None:
@@ -97,6 +97,9 @@ def fetch_statcast_catcher_framing_robust(year: int, *, min_called_p: str | int 
 
 
 def fetch_oaa_all_positions(year: int, *, min_att: str | int = "q") -> pd.DataFrame:
+    """
+    Statcast OAA leaderboard (all positions).
+    """
     if statcast_outs_above_average is None:
         raise ImportError("pybaseball is required. Install pybaseball in this environment.")
 
@@ -124,6 +127,9 @@ def ingest_defence_year(
     pop_min_3b: int = 0,
     fangraphs_qual: Optional[int] = None,
 ) -> dict:
+    """
+    Ingest defence data for a given year.
+    """
     current_year = datetime.now(timezone.utc).year
     if year > current_year + 1:
         return {"status": "error", "message": f"Year {year} is too far in the future (current UTC year: {current_year})."}
@@ -134,6 +140,7 @@ def ingest_defence_year(
     uploads: List[tuple[str, pd.DataFrame]] = []
     errors: List[str] = []
 
+    # OAA stats
     df_oaa = retry_with_backoff(
         f"OAA year={year}",
         lambda: fetch_oaa_all_positions(year, min_att=oaa_min_att),
@@ -143,6 +150,7 @@ def ingest_defence_year(
     elif df_oaa is None:
         errors.append(f"{year}: OAA fetch failed")
 
+    # Outfield catch probability
     df_catch = retry_with_backoff(
         f"outfield catch probability year={year}",
         lambda: statcast_outfield_catch_prob(year, min_opp="q"),  # type: ignore[misc]
@@ -154,6 +162,7 @@ def ingest_defence_year(
     elif df_catch is None:
         errors.append(f"{year}: outfield catch probability fetch failed")
 
+    # Catcher pop time
     df_pop = retry_with_backoff(
         f"catcher pop time year={year}",
         lambda: statcast_catcher_poptime(year, min_2b_att=pop_min_2b, min_3b_att=pop_min_3b),  # type: ignore[misc]
@@ -165,6 +174,7 @@ def ingest_defence_year(
     elif df_pop is None:
         errors.append(f"{year}: catcher pop time fetch failed")
 
+    # Catcher framing
     df_framing = retry_with_backoff(
         f"catcher framing year={year}",
         lambda: fetch_statcast_catcher_framing_robust(year, min_called_p=framing_min_called),
@@ -176,6 +186,7 @@ def ingest_defence_year(
     elif df_framing is None:
         errors.append(f"{year}: catcher framing fetch failed")
 
+    # Arm strength
     df_arm = retry_with_backoff(
         f"arm strength year={year}",
         lambda: fetch_statcast_arm_strength(year, min_throws=arm_min_throws),
@@ -187,7 +198,9 @@ def ingest_defence_year(
     elif df_arm is None:
         errors.append(f"{year}: arm strength fetch failed")
 
+    # FanGraphs fielding
     def _fg() -> pd.DataFrame:
+        """Fetch FanGraphs fielding data for a given year."""
         return fielding_stats(year, year, qual=fangraphs_qual, split_seasons=True)  # type: ignore[misc]
 
     df_fg = retry_with_backoff(f"FanGraphs fielding year={year}", _fg)
@@ -227,6 +240,9 @@ def ingest_year_range(
     pop_min_3b: int = 0,
     fangraphs_qual: Optional[int] = None,
 ) -> dict:
+    """
+    Ingest defence data for a range of years.
+    """
     if start_year > end_year:
         return {"status": "error", "message": "start_year must be <= end_year"}
 
@@ -282,7 +298,7 @@ def main() -> None:
     run_defence_ingestion_main()
 
 
-def handler(event: dict, context) -> dict:
+def handler(event: dict, context: Any) -> dict:
     from ..pipeline.handlers import defence_ingestion_handler
 
     return defence_ingestion_handler(event, context)

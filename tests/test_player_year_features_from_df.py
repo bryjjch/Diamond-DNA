@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from src.silver.build_player_year_archetype_features import player_year_features_from_df
+from src.silver.silver_build_player_year_archetype_rows import player_year_features_from_df
 
 
 def _pitcher_df(n: int = 600) -> pd.DataFrame:

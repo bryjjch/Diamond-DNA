@@ -4,20 +4,18 @@ Statcast Pitch Data Ingestion
 
 Fetches pitch-level Statcast data from pybaseball for a date range
 and uploads each day to S3 as Parquet at {s3_prefix}/year=Y/date=D/statcast_pitches.parquet.
-
-Use for both daily (start_date = end_date = yesterday) and backfill (larger range).
 """
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Any, Dict
 
 import pandas as pd
 from pybaseball import statcast
 
-from ..pipeline.ingest_common import retry_with_backoff
-from ..pipeline.lake_paths import raw_statcast_day_key
-from ..pipeline.s3_parquet import write_parquet_to_s3
+from .ingest_common import retry_with_backoff
+from ..pipeline.s3_interaction import raw_statcast_day_key
+from ..pipeline.s3_interaction import write_parquet_to_s3
 
 # Configure logging
 logging.basicConfig(
@@ -27,34 +25,21 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def fetch_statcast_data_for_date(date_str: str, max_retries: int = 3) -> Optional[pd.DataFrame]:
+def fetch_pitch_data_for_date(
+    date_str: str,
+    s3_bucket: str,
+    s3_prefix: str,
+    *,
+    max_retries: int = 3,
+) -> dict:
     """
-    Fetch Statcast pitch data for a single calendar day (YYYY-MM-DD) with retry logic.
-    """
-
-    def _fetch() -> pd.DataFrame:
-        df = statcast(start_dt=date_str, end_dt=date_str)
-        if df is not None and not df.empty:
-            logger.info("Fetched %d records for %s", len(df), date_str)
-            return df
-        logger.warning("No data returned for %s", date_str)
-        return pd.DataFrame()
-
-    return retry_with_backoff(
-        f"Statcast pitch data for {date_str}",
-        _fetch,
-        max_retries=max_retries,
-    )
-
-
-def fetch_pitch_data_for_date(date_str: str, s3_bucket: str, s3_prefix: str) -> dict:
-    """
-    Fetch one day of Statcast pitch data and upload to S3.
+    Fetch one day of Statcast pitch data (with retries) and upload to S3.
 
     Args:
         date_str: Date to ingest (YYYY-MM-DD).
         s3_bucket: S3 bucket name.
         s3_prefix: S3 key prefix (e.g. bronze/statcast).
+        max_retries: Attempts for the Statcast API call before giving up.
 
     Returns:
         Dict with keys: status ("ok" | "no_data" | "error"), message, and optionally records.
@@ -73,7 +58,19 @@ def fetch_pitch_data_for_date(date_str: str, s3_bucket: str, s3_prefix: str) -> 
 
     logger.info(f"Ingesting Statcast data for {date_str}")
 
-    df = fetch_statcast_data_for_date(date_str)
+    def _fetch() -> pd.DataFrame:
+        df = statcast(start_dt=date_str, end_dt=date_str)
+        if df is not None and not df.empty:
+            logger.info("Fetched %d records for %s", len(df), date_str)
+            return df
+        logger.warning("No data returned for %s", date_str)
+        return pd.DataFrame()
+
+    df = retry_with_backoff(
+        f"Statcast pitch data for {date_str}",
+        _fetch,
+        max_retries=max_retries,
+    )
     if df is None:
         return {"status": "error", "message": "Fetch failed after retries"}
     if df.empty:
@@ -165,7 +162,7 @@ def main() -> None:
     run_statcast_ingestion_main()
 
 
-def handler(event: dict, context) -> dict:
+def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     from ..pipeline.handlers import statcast_ingestion_handler
 
     return statcast_ingestion_handler(event, context)
