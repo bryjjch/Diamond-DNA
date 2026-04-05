@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Diamond DNA — Clusters &amp; similar players</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  </head>
+  <body>
+    <header class="site-header">
+      <h1>Diamond DNA</h1>
+      <p class="tagline">Archetype clusters and PCA-space KNN neighbors{% if year %} ({{ year }}){% endif %}</p>
+      {% if source %}<p class="meta">{{ source }}</p>{% endif %}
+    </header>
+
+    {% if load_error %}
+    <div class="banner error" role="alert">
+      <strong>Data not loaded.</strong> {{ load_error }}
+      <p class="hint">
+        Set <code>WEBAPP_DATA_DIR</code> to a folder with
+        <code>archetypes_batter.parquet</code>, <code>archetypes_pitcher.parquet</code>,
+        <code>neighbors_batter.parquet</code>, <code>neighbors_pitcher.parquet</code>,
+        or configure AWS and <code>S3_BUCKET</code> / <code>GOLD_PREFIX</code> (see pipeline settings).
+        Optional: <code>WEBAPP_YEAR</code> for the season.
+      </p>
+    </div>
+    {% endif %}
+
+    <nav class="tabs" aria-label="Sections">
+      <button type="button" class="tab active" data-tab="clusters">Clusters</button>
+      <button type="button" class="tab" data-tab="similar">Similar players (KNN)</button>
+    </nav>
+
+    <main>
+      <section id="panel-clusters" class="panel active">
+        <div class="toolbar">
+          <label class="sr-only" for="cluster-search">Search players in clusters</label>
+          <input
+            id="cluster-search"
+            type="search"
+            placeholder="Search player name…"
+            autocomplete="off"
+          />
+        </div>
+        <div id="cluster-search-results" class="search-results hidden" aria-live="polite"></div>
+        <div id="clusters-mount" class="clusters-grid"></div>
+      </section>
+
+      <section id="panel-similar" class="panel">
+        <div class="toolbar">
+          <label>
+            Role
+            <select id="similar-role" aria-label="Role for similar players">
+              <option value="batter">Batter</option>
+              <option value="pitcher">Pitcher</option>
+            </select>
+          </label>
+          <label class="sr-only" for="similar-search">Find player</label>
+          <input
+            id="similar-search"
+            type="search"
+            placeholder="Search player…"
+            autocomplete="off"
+          />
+        </div>
+        <div class="similar-layout">
+          <div class="leaderboard-pane">
+            <h2>Players</h2>
+            <p class="hint small">Click a player for nearest neighbors in PCA space.</p>
+            <ul id="leaderboard-list" class="player-list"></ul>
+          </div>
+          <div class="neighbors-pane">
+            <h2>Nearest neighbors</h2>
+            <div id="neighbors-empty" class="muted">Select a player from the list or search.</div>
+            <div id="neighbors-content" class="hidden">
+              <h3 id="neighbors-title"></h3>
+              <ol id="neighbors-list" class="neighbors-list"></ol>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      (function () {
+        const loadError = {% if load_error %}true{% else %}false{% endif %};
+
+        document.querySelectorAll(".tab").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            document.querySelectorAll(".tab").forEach((b) => b.classList.remove("active"));
+            btn.classList.add("active");
+            const id = btn.getAttribute("data-tab");
+            document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
+            document.getElementById("panel-" + id).classList.add("active");
+          });
+        });
+
+        function esc(s) {
+          const d = document.createElement("div");
+          d.textContent = s;
+          return d.innerHTML;
+        }
+
+        function renderClusterSearchResults(items) {
+          const el = document.getElementById("cluster-search-results");
+          if (!items.length) {
+            el.innerHTML = "";
+            el.classList.add("hidden");
+            return;
+          }
+          el.classList.remove("hidden");
+          el.innerHTML =
+            "<h3>Matches</h3><ul>" +
+            items
+              .map(
+                (r) =>
+                  "<li><strong>" +
+                  esc(r.player_name) +
+                  "</strong> — " +
+                  esc(r.cluster_label) +
+                  " <span class=\"muted\">(" +
+                  esc(r.role) +
+                  ")</span></li>"
+              )
+              .join("") +
+            "</ul>";
+        }
+
+        function renderClusters(clusters) {
+          const mount = document.getElementById("clusters-mount");
+          const byRole = { batter: [], pitcher: [] };
+          clusters.forEach((c) => {
+            if (byRole[c.role]) byRole[c.role].push(c);
+          });
+          const col = (title, roleKey) => {
+            const list = byRole[roleKey] || [];
+            list.sort((a, b) => a.cluster_id - b.cluster_id);
+            return (
+              "<div class=\"role-column\"><h2>" +
+              esc(title) +
+              "</h2>" +
+              list
+                .map((c) => {
+                  const players = (c.players || [])
+                    .map((p) => "<li data-name=\"" + esc(p.player_name.toLowerCase()) + "\">" + esc(p.player_name) + "</li>")
+                    .join("");
+                  return (
+                    "<details class=\"cluster-block\" data-cluster=\"" +
+                    esc(String(c.cluster_id)) +
+                    "\" data-role=\"" +
+                    esc(c.role) +
+                    "\"><summary>" +
+                    esc(c.label) +
+                    " <span class=\"count\">(" +
+                    (c.players ? c.players.length : 0) +
+                    ")</span></summary><ul class=\"player-ul\">" +
+                    players +
+                    "</ul></details>"
+                  );
+                })
+                .join("") +
+              "</div>"
+            );
+          };
+          mount.innerHTML = col("Batters", "batter") + col("Pitchers", "pitcher");
+        }
+
+        function filterClusterDom(q) {
+          const ql = q.trim().toLowerCase();
+          document.querySelectorAll(".cluster-block").forEach((det) => {
+            if (!ql) {
+              det.classList.remove("hidden");
+              det.querySelectorAll("li").forEach((li) => li.classList.remove("hidden"));
+              return;
+            }
+            let any = false;
+            det.querySelectorAll("li").forEach((li) => {
+              const match = li.getAttribute("data-name").includes(ql);
+              li.classList.toggle("hidden", !match);
+              if (match) any = true;
+            });
+            det.classList.toggle("hidden", !any);
+          });
+        }
+
+        let searchTimer = null;
+        document.getElementById("cluster-search").addEventListener("input", (e) => {
+          const q = e.target.value;
+          filterClusterDom(q);
+          clearTimeout(searchTimer);
+          searchTimer = setTimeout(async () => {
+            if (!q.trim() || loadError) {
+              renderClusterSearchResults([]);
+              return;
+            }
+            const res = await fetch("/api/search?q=" + encodeURIComponent(q));
+            const data = await res.json();
+            if (data.ok) renderClusterSearchResults(data.results || []);
+            else renderClusterSearchResults([]);
+          }, 200);
+        });
+
+        async function loadLeaderboard(role) {
+          const res = await fetch("/api/leaderboard?role=" + encodeURIComponent(role) + "&limit=800");
+          const data = await res.json();
+          const ul = document.getElementById("leaderboard-list");
+          ul.innerHTML = "";
+          if (!data.ok) return;
+          (data.players || []).forEach((p) => {
+            const li = document.createElement("li");
+            const b = document.createElement("button");
+            b.type = "button";
+            b.className = "linklike";
+            b.textContent = p.player_name;
+            b.addEventListener("click", () => showNeighbors(p.player_id, role, p.player_name));
+            li.appendChild(b);
+            ul.appendChild(li);
+          });
+        }
+
+        async function showNeighbors(playerId, role, nameHint) {
+          document.getElementById("neighbors-empty").classList.add("hidden");
+          const content = document.getElementById("neighbors-content");
+          content.classList.remove("hidden");
+          const res = await fetch(
+            "/api/neighbors?player_id=" + encodeURIComponent(String(playerId)) + "&role=" + encodeURIComponent(role)
+          );
+          const data = await res.json();
+          const title = document.getElementById("neighbors-title");
+          const ol = document.getElementById("neighbors-list");
+          ol.innerHTML = "";
+          if (!data.ok) {
+            title.textContent = data.error || "Error";
+            return;
+          }
+          const disp = data.player_name || nameHint || "Player " + data.player_id;
+          title.textContent = disp + " — nearest in PCA space";
+          (data.neighbors || []).forEach((n) => {
+            const li = document.createElement("li");
+            li.innerHTML =
+              "<span class=\"rank\">#" +
+              n.rank +
+              "</span> " +
+              esc(n.player_name) +
+              " <span class=\"muted dist\">Δ " +
+              (typeof n.distance === "number" ? n.distance.toFixed(4) : n.distance) +
+              "</span>";
+            ol.appendChild(li);
+          });
+        }
+
+        const similarRole = document.getElementById("similar-role");
+        similarRole.addEventListener("change", () => {
+          loadLeaderboard(similarRole.value);
+          document.getElementById("neighbors-empty").classList.remove("hidden");
+          document.getElementById("neighbors-content").classList.add("hidden");
+        });
+
+        let lbTimer = null;
+        document.getElementById("similar-search").addEventListener("input", (e) => {
+          const q = e.target.value.trim().toLowerCase();
+          clearTimeout(lbTimer);
+          lbTimer = setTimeout(() => {
+            document.querySelectorAll("#leaderboard-list li").forEach((li) => {
+              const t = li.textContent.toLowerCase();
+              li.classList.toggle("hidden", q.length > 0 && !t.includes(q));
+            });
+          }, 150);
+        });
+
+        if (!loadError) {
+          fetch("/api/clusters")
+            .then((r) => r.json())
+            .then((data) => {
+              if (data.ok) renderClusters(data.clusters);
+            });
+          loadLeaderboard("batter");
+        }
+      })();
+    </script>
+  </body>
+</html>
