@@ -12,45 +12,6 @@ from .runtime import (
 from .settings import PipelineSettings
 
 
-def silver_to_gold_preprocessing_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    from ..gold.silver_to_gold_preprocessing import build_silver_to_gold_preprocessing
-
-    cy = current_utc_year()
-    cfg = PipelineSettings.from_environ()
-    start_year = event_or_env_int(event, "start_year", "START_YEAR", cy - 1)
-    end_year = event_or_env_int(event, "end_year", "END_YEAR", cy)
-    bucket = event_or_env_str(event, "s3_bucket", "S3_BUCKET", cfg.s3_bucket)
-    silver_prefix = event_or_env_str(event, "silver_prefix", "FEATURE_PREFIX", cfg.feature_prefix)
-    gold_prefix = event_or_env_str(event, "gold_prefix", "GOLD_PREFIX", cfg.gold_prefix)
-    role = event_or_env_str(event, "role", "ROLE", "all")
-    corr_raw = event_or_env_str(event, "correlation_threshold", "CORRELATION_THRESHOLD", "0.95")
-    nzv_raw = event_or_env_str(
-        event,
-        "near_zero_variance_unique_ratio",
-        "NEAR_ZERO_VARIANCE_UNIQUE_RATIO",
-        "0.005",
-    )
-    correlation_threshold = float(corr_raw)
-    near_zero_variance_unique_ratio = float(nzv_raw)
-
-    result = build_silver_to_gold_preprocessing(
-        bucket=bucket,
-        silver_prefix=silver_prefix,
-        gold_prefix=gold_prefix,
-        start_year=start_year,
-        end_year=end_year,
-        role_filter=role,
-        correlation_threshold=correlation_threshold,
-        near_zero_variance_unique_ratio=near_zero_variance_unique_ratio,
-    )
-    status_code = 200 if result.get("status") in ("ok", "no_data") else 400
-    return {
-        "statusCode": status_code,
-        "body": result.get("message", ""),
-        "details": result,
-    }
-
-
 def gold_archetype_clustering_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     from ..ml.archetype_clustering import (
         ArchetypeClusteringConfig,

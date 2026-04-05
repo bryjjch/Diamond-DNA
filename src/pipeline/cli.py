@@ -11,49 +11,6 @@ from .settings import PipelineSettings
 logger = logging.getLogger(__name__)
 
 
-def run_silver_to_gold_preprocessing_main() -> None:
-    from ..gold.silver_to_gold_preprocessing import build_silver_to_gold_preprocessing
-
-    cfg = PipelineSettings.from_environ()
-    cy = current_utc_year()
-    parser = argparse.ArgumentParser(
-        description="Build gold preprocessed player-year feature tables from silver outputs."
-    )
-    parser.add_argument("--start-year", type=int, default=cy - 1)
-    parser.add_argument("--end-year", type=int, default=cy)
-    parser.add_argument("--bucket", type=str, default=cfg.s3_bucket)
-    parser.add_argument("--silver-prefix", type=str, default=cfg.feature_prefix)
-    parser.add_argument("--gold-prefix", type=str, default=cfg.gold_prefix)
-    parser.add_argument(
-        "--role",
-        choices=("all", "batter", "pitcher"),
-        default="all",
-        help="Run preprocessing for both roles or one specific role.",
-    )
-    parser.add_argument("--correlation-threshold", type=float, default=0.95)
-    parser.add_argument("--near-zero-variance-unique-ratio", type=float, default=0.005)
-    args = parser.parse_args()
-
-    result = build_silver_to_gold_preprocessing(
-        bucket=args.bucket,
-        silver_prefix=args.silver_prefix,
-        gold_prefix=args.gold_prefix,
-        start_year=args.start_year,
-        end_year=args.end_year,
-        role_filter=args.role,
-        correlation_threshold=args.correlation_threshold,
-        near_zero_variance_unique_ratio=args.near_zero_variance_unique_ratio,
-    )
-
-    if result["status"] == "error":
-        logger.error(result["message"])
-        raise SystemExit(1)
-    if result["status"] == "no_data":
-        logger.warning(result["message"])
-    else:
-        logger.info(result["message"])
-
-
 def run_gold_archetype_clustering_main() -> None:
     from ..ml.archetype_clustering import (
         ArchetypeClusteringConfig,
