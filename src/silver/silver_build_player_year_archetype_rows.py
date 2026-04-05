@@ -52,6 +52,7 @@ def player_year_features_from_df(
     role: str,
     player_id: int,
     year: int,
+    player_name: str = "",
     min_pitches_pitcher: int,
     min_pitches_batter: int,
     min_batted_ball_batter: int,
@@ -68,7 +69,8 @@ def player_year_features_from_df(
     base: Dict[str, object] = {
         "role": role,
         "player_id": int(player_id),
-        "year": int(year)
+        "year": int(year),
+        "player_name": str(player_name) if player_name is not None else "",
     }
 
     # Get the total number of pitches.

@@ -24,6 +24,7 @@ def test_numeric_feature_columns_excludes_ids_and_pitch_count():
     df = pd.DataFrame(
         {
             "player_id": [1, 2],
+            "player_name": ["A, Alpha", "B, Beta"],
             "year": [2024, 2024],
             "role": ["batter", "batter"],
             "n_pitches_total": [100, 200],
@@ -34,6 +35,7 @@ def test_numeric_feature_columns_excludes_ids_and_pitch_count():
     df_i = prepare_dataframe_for_archetype_clustering(df)
     cols = numeric_feature_columns(df_i)
     assert "player_id" not in cols
+    assert "player_name" not in cols
     assert "year" not in cols
     assert "n_pitches_total" not in cols
     assert cols == ["contact_rate", "swing_rate"]
@@ -92,8 +94,10 @@ def test_fit_archetype_clustering_fixed_pca_and_k():
     )
     df = pd.DataFrame(X, columns=[f"f{i}" for i in range(6)])
     df.insert(0, "player_id", np.arange(300))
-    df.insert(1, "year", 2024)
-    df.insert(2, "role", "batter")
+    df.insert(1, "player_name", [f"Player, {i}" for i in range(300)])
+    df.insert(2, "year", 2024)
+    df.insert(3, "role", "batter")
+    df.insert(4, "n_pitches_total", np.arange(500, 500 + 300))
 
     cfg = ArchetypeClusteringConfig(
         pca_n_components=4,
@@ -105,7 +109,15 @@ def test_fit_archetype_clustering_fixed_pca_and_k():
 
     assert meta["n_clusters"] == 4
     assert meta["pca_n_components"] == 4
+    assert meta["clustering_index_columns"] == [
+        "player_id",
+        "player_name",
+        "year",
+        "role",
+        "n_pitches_total",
+    ]
     assert "cluster_id" in out.columns
+    assert "player_name" in out.columns
     assert out["cluster_id"].nunique() == 4
     assert bundle["n_clusters"] == 4
     assert bundle["gmm"].n_components == 4

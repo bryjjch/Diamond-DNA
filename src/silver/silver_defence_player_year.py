@@ -94,12 +94,13 @@ def _weighted_of_catch_completion(df: pd.DataFrame) -> pd.Series:
     return pd.Series(rate, index=pids)
 
 
-def fangraphs_to_mlbam_map() -> Dict[int, int]:
+def fangraphs_to_mlbam_map(cw: Optional[pd.DataFrame] = None) -> Dict[int, int]:
     """Return a dictionary mapping FanGraphs IDs to MLBAM IDs."""
     if chadwick_register is None:
         logger.warning("pybaseball.chadwick_register unavailable; FanGraphs DRS merge skipped.")
         return {}
-    cw = chadwick_register()
+    if cw is None:
+        cw = chadwick_register()
     fg = pd.to_numeric(cw["key_fangraphs"], errors="coerce")
     mlb = pd.to_numeric(cw["key_mlbam"], errors="coerce")
     mask = fg.notna() & mlb.notna()

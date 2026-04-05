@@ -23,7 +23,7 @@ from ..pipeline.s3_interaction import (
 
 logger = logging.getLogger(__name__)
 
-ID_COLUMNS = ("player_id", "year", "role")
+ID_COLUMNS = ("player_id", "year", "role", "player_name")
 
 # Pitch-type share columns dropped for archetype training (arsenal summarized by pitch_type_entropy).
 PITCH_TYPE_SHARE_CODES_EXCLUDED: frozenset[str] = frozenset(
