@@ -15,7 +15,7 @@ import pandas as pd
 
 try:
     from pybaseball import chadwick_register
-except Exception:  # pragma: no cover
+except Exception:
     chadwick_register = None
 
 from ..pipeline.s3_interaction import (
@@ -44,10 +44,12 @@ _DEFENCE_METRIC_KEYS: Tuple[str, ...] = (
 
 
 def _empty_metrics() -> Dict[str, float]:
+    """Return a dictionary with all defence metrics set to NaN."""
     return {k: float("nan") for k in _DEFENCE_METRIC_KEYS}
 
 
 def _parse_pct_cell(x: object) -> float:
+    """Parse a percentage cell from a string and return a float."""
     if x is None or (isinstance(x, float) and np.isnan(x)):
         return float("nan")
     s = str(x).strip().replace("%", "")
@@ -58,6 +60,7 @@ def _parse_pct_cell(x: object) -> float:
 
 
 def _col_ci(df: pd.DataFrame, *names: str) -> Optional[str]:
+    """Return the column name in lowercase if it exists in the DataFrame."""
     lower = {c.lower(): c for c in df.columns}
     for n in names:
         if n.lower() in lower:
@@ -67,7 +70,7 @@ def _col_ci(df: pd.DataFrame, *names: str) -> Optional[str]:
 
 def _weighted_of_catch_completion(df: pd.DataFrame) -> pd.Series:
     """
-    Overall outs / opportunities across Statcast star bins (outfield catch prob leaderboard).
+    Overall outs / opportunities across Statcast stars (outfield catch probability leaderboard).
     """
     star_cols: List[Tuple[str, str]] = [
         ("n_fieldout_5stars", "n_opp_5stars"),
@@ -92,6 +95,7 @@ def _weighted_of_catch_completion(df: pd.DataFrame) -> pd.Series:
 
 
 def fangraphs_to_mlbam_map() -> Dict[int, int]:
+    """Return a dictionary mapping FanGraphs IDs to MLBAM IDs."""
     if chadwick_register is None:
         logger.warning("pybaseball.chadwick_register unavailable; FanGraphs DRS merge skipped.")
         return {}
@@ -99,7 +103,6 @@ def fangraphs_to_mlbam_map() -> Dict[int, int]:
     fg = pd.to_numeric(cw["key_fangraphs"], errors="coerce")
     mlb = pd.to_numeric(cw["key_mlbam"], errors="coerce")
     mask = fg.notna() & mlb.notna()
-    # Last write wins on duplicate key_fangraphs (rare).
     return {int(a): int(b) for a, b in zip(fg[mask], mlb[mask])}
 
 
@@ -123,37 +126,50 @@ def load_defence_metrics_by_player_year(
         oaa_col = _col_ci(oaa_df, "outs_above_average")
         if pid_c and oaa_col:
             grp = oaa_df.groupby(pid_c, dropna=True)
+            # Sum the outs above average for each player.
             oaa_sum = grp[oaa_col].apply(lambda s: pd.to_numeric(s, errors="coerce").sum(min_count=1))
+            # Get the column name for the actual success rate.
             act_c = _col_ci(oaa_df, "actual_success_rate_formatted")
+            # Get the column name for the adjusted estimated success rate.
             adj_c = _col_ci(oaa_df, "adj_estimated_success_rate_formatted")
+            
+            # Mean the actual success rate for each player.
             act_mean = (
                 grp[act_c].apply(lambda s: pd.to_numeric(s.map(_parse_pct_cell), errors="coerce").mean(skipna=True))
                 if act_c
                 else None
             )
+            # Mean the adjusted estimated success rate for each player.
             adj_mean = (
                 grp[adj_c].apply(lambda s: pd.to_numeric(s.map(_parse_pct_cell), errors="coerce").mean(skipna=True))
                 if adj_c
                 else None
             )
+            # Loop through each player and set the defensive metrics.
             for pid in oaa_sum.index:
                 try:
                     pid_i = int(float(pid))
                 except (TypeError, ValueError):
                     continue
+                # Set the defensive metrics for the player.
                 row = out.setdefault(pid_i, _empty_metrics())
+                # Set the outs above average for the player.
                 v = oaa_sum.loc[pid]
                 row["def_oaa_total"] = float(v) if pd.notna(v) else float("nan")
                 if act_mean is not None and pid in act_mean.index:
+                    # Set the actual fielding success rate for the player.
                     row["def_actual_fielding_success_rate_mean"] = float(act_mean.loc[pid])
                 if adj_mean is not None and pid in adj_mean.index:
+                    # Set the adjusted estimated fielding success rate for the player.
                     row["def_adj_estimated_fielding_success_rate_mean"] = float(adj_mean.loc[pid])
 
     # --- Outfield catch probability -> completion rate ---
     cp_key = raw_defence_dataset_key(raw_defence_prefix, year, DEFENCE_OUTFIELD_CATCH_PARQUET)
     cp_df = read_parquet_from_s3(bucket, cp_key, log_read=False, missing_key_log="none")
     if cp_df is not None and not cp_df.empty:
+        # Get the weighted outfield catch completion rate for each player.
         rates = _weighted_of_catch_completion(cp_df)
+        # Loop through each player and set the defensive metrics.
         for pid, r in rates.items():
             if pd.isna(pid):
                 continue
@@ -162,6 +178,7 @@ def load_defence_metrics_by_player_year(
             except (TypeError, ValueError):
                 continue
             row = out.setdefault(pid_i, _empty_metrics())
+            # Set the outfield catch completion rate for the player.
             row["def_outfield_catch_completion_rate"] = float(r) if pd.notna(r) else float("nan")
 
     # --- Arm strength (Savant max arm ~ top-end throws) ---
@@ -174,6 +191,7 @@ def load_defence_metrics_by_player_year(
             arm_df = arm_df.copy()
             arm_df[pid_c] = pd.to_numeric(arm_df[pid_c], errors="coerce")
             arm_df[max_c] = pd.to_numeric(arm_df[max_c], errors="coerce")
+            # Get the maximum arm strength for each player.
             grp_max = arm_df.groupby(pid_c, dropna=True)[max_c].max()
             for pid, val in grp_max.items():
                 if pd.isna(pid) or pd.isna(val):
@@ -194,6 +212,7 @@ def load_defence_metrics_by_player_year(
                     continue
                 pid_i = int(pid)
                 row = out.setdefault(pid_i, _empty_metrics())
+                # Set the pop time to 2B for the player.
                 row["def_pop_time_2b_sec"] = float(val)
 
     # --- Catcher framing (runs) ---
@@ -207,6 +226,7 @@ def load_defence_metrics_by_player_year(
                 if pd.isna(pid) or pd.isna(val):
                     continue
                 pid_i = int(pid)
+                # Set the framing runs for the player.
                 row = out.setdefault(pid_i, _empty_metrics())
                 row["def_framing_runs"] = float(val)
 

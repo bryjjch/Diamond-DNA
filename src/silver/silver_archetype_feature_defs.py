@@ -50,7 +50,7 @@ def nan_iqr(values: pd.Series) -> float:
 
 
 def nan_entropy_from_counts(counts: Dict[str, int]) -> float:
-    """Shannon entropy computed from discrete counts."""
+    """Shannon entropy computed from discrete counts. Calculated by the formula: -sum(p_i * log(p_i))"""
     total = sum(counts.values())
     if total <= 0:
         return float("nan")
@@ -98,9 +98,9 @@ def compute_swing_flag(df: pd.DataFrame) -> pd.Series:
     Compute a hitter swing flag from pitch-level `description`.
 
     Notes:
-    - Statcast `description` in your sample includes values like:
+    - Statcast `description` includes values like:
       `foul`, `hit_into_play`, `called_strike`, `ball`, etc.
-    - We classify "swing" primarily by:
+    - We can classify "swing" primarily by:
       - description contains `swinging_strike`
       - description contains `foul`
       - description contains `hit_into_play`
@@ -114,7 +114,7 @@ def compute_swing_flag(df: pd.DataFrame) -> pd.Series:
     is_foul = desc.str.contains("foul", na=False)
     is_hit_into_play = desc.str.contains("hit_into_play", na=False)
 
-    # Rare cases can appear as `missed_bunt` / `bunt_foul` etc.
+    # Can sometimes also be `missed_bunt` / `bunt_foul` etc.
     is_missed_bunt = desc.str.contains("missed_bunt", na=False)
     is_bunt_foul = desc.str.contains("bunt_foul", na=False)
 
@@ -133,7 +133,7 @@ def compute_barrel_flag(
     *,
     barrel_def: BarrelDef = DEFAULT_BARREL_DEF,
 ) -> pd.Series:
-    """Compute Statcast/MLB barrel flag from `launch_speed` and `launch_angle`."""
+    """Compute barrel flag from `launch_speed` and `launch_angle`."""
     if "launch_speed" not in df.columns or "launch_angle" not in df.columns:
         raise ValueError("Expected columns `launch_speed` and `launch_angle` to compute barrel.")
 
@@ -176,9 +176,9 @@ def pull_oppo_center_rates(
     angle_pull_threshold_deg: float = 20.0,
 ) -> Tuple[float, float, float]:
     """
-    Pull / opposite-field / center rates among rows with valid stand, hc_x, hc_y.
+    Pull / opposite-field / center rates for rows with valid stand, hc_x, hc_y.
 
-    Uses handedness-specific pull sides (Statcast: hc_x increases toward first base).
+    Uses handedness-specific pull sides.
     """
     if stand_col not in df.columns or hc_x_col not in df.columns or hc_y_col not in df.columns:
         return (float("nan"), float("nan"), float("nan"))

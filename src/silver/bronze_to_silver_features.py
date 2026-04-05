@@ -1,24 +1,25 @@
 #!/usr/bin/env python3
 """
-Bronze → silver: build player-year archetype feature tables directly from daily Statcast bronze.
+Bronze → silver: build player-year archetype feature tables from bronze data.
 
-Reads daily parquet under ``{bronze_prefix}/year=Y/date=YYYY-MM-DD/statcast_pitches.parquet``,
-groups in memory by (role, player_id, year), and writes
-``{silver_prefix}/{role}/year=Y/player_year_features.parquet``.
+Reads bronze data from the S3 bucket and writes silver data to the S3 bucket.
 
 For scheduled runs that only pass ``end_date`` (e.g. yesterday), use ``year_to_date=True`` so
 bronze is loaded from Jan 1 through ``end_date`` for each affected calendar year—matching
-season-to-date aggregates without a separate by-player layer.
+season-to-date aggregates.
 """
 
 from __future__ import annotations
 
+import argparse
 import logging
 from datetime import date, datetime, timedelta
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import pandas as pd
 
+from ..pipeline.runtime import event_or_env_str, yesterday_utc_date_str
+from ..pipeline.settings import PipelineSettings
 from ..pipeline.s3_interaction import (
     feature_player_year_output_key,
     raw_statcast_day_key,
@@ -39,10 +40,12 @@ from .silver_sprint_helper import build_sprint_speed_lookups_by_year
 logger = logging.getLogger(__name__)
 
 def _parse_date(value: str) -> date:
+    """Parse a date string and return a date object."""
     return datetime.strptime(value, "%Y-%m-%d").date()
 
 
 def _date_range(start: date, end: date) -> Iterable[date]:
+    """Generate a range of dates between start and end."""
     current = start
     while current <= end:
         yield current
@@ -76,6 +79,7 @@ def normalize_statcast_bronze_df(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _dedupe_pitches(df: pd.DataFrame) -> pd.DataFrame:
+    """Deduplicate pitches by game_pk, pitch_number, and at_bat_number."""
     dedup_cols = [c for c in ("game_pk", "pitch_number", "at_bat_number") if c in df.columns]
     if not dedup_cols:
         return df
@@ -155,6 +159,7 @@ def build_bronze_to_silver_features(
         year_to_date,
     )
 
+    # Load the bronze Statcast data.
     full_raw = load_bronze_statcast_range(bucket, bronze_statcast_prefix, bronze_start, bronze_end)
     if full_raw is None or full_raw.empty:
         msg = f"No bronze Statcast data between {bronze_start} and {bronze_end}"
@@ -187,6 +192,7 @@ def build_bronze_to_silver_features(
     rows_written = 0
 
     for role in ("batter", "pitcher"):
+        # Build the sprint speed lookup by year.
         sprint_lookup_by_year: Dict[int, Dict[int, float]] = {}
         if role == "batter":
             sprint_lookup_by_year = build_sprint_speed_lookups_by_year(
@@ -197,6 +203,7 @@ def build_bronze_to_silver_features(
                 sprint_speed_min_opp,
             )
 
+        # Build the defence metrics by year.
         defence_by_year: Dict[int, Dict[int, Dict[str, float]]] = {}
         if role == "batter":
             fg_map = fangraphs_to_mlbam_map()
@@ -209,6 +216,7 @@ def build_bronze_to_silver_features(
                 )
 
         feature_rows: List[Dict[str, object]] = []
+        # Group the full raw data by role and drop missing values.
         grouped = full_raw.groupby(role, dropna=True)
         n_players = grouped.ngroups
         for idx, (player_id, player_df) in enumerate(grouped):
@@ -218,10 +226,12 @@ def build_bronze_to_silver_features(
             if (idx % 100) == 0:
                 logger.info("Role %s: processing player %d / %d (player_id=%s)", role, idx + 1, n_players, pid)
 
+            # Group the player data by year and deduplicate pitches.
             for year, df_year in player_df.groupby("year"):
                 y = int(year)
                 df_work = _dedupe_pitches(df_year.copy())
 
+                # Build the player-year features from the deduplicated data (sprint speed lookup included for batters).
                 row = player_year_features_from_df(
                     df=df_work,
                     role=role,
@@ -237,9 +247,11 @@ def build_bronze_to_silver_features(
                 if row is None:
                     continue
 
+                # Merge the defence metrics into the row.
                 if role == "batter":
                     merge_defence_into_row(row, defence_by_year.get(y, {}))
 
+                # Validate the feature row.
                 _validate_feature_row(row, role=role)
                 feature_rows.append(row)
 
@@ -248,6 +260,7 @@ def build_bronze_to_silver_features(
             continue
 
         features_df = pd.DataFrame(feature_rows)
+        # Write the feature rows to the S3 bucket.
         for y in range(year_lo, year_hi + 1):
             df_year = features_df[features_df["year"] == y]
             if df_year.empty:
@@ -281,15 +294,102 @@ def build_bronze_to_silver_features(
     }
 
 
-def main() -> None:
-    from ..pipeline.cli import run_bronze_to_silver_features_main
+def run_bronze_to_silver_features_main() -> None:
+    cfg = PipelineSettings.from_environ()
+    yesterday = yesterday_utc_date_str()
+    parser = argparse.ArgumentParser(
+        description=(
+            "Build silver player-year feature tables from bronze Statcast dailies. "
+            "By default loads year-to-date through --end-date for each affected season."
+        )
+    )
+    parser.add_argument("--start-date", type=str, default=yesterday)
+    parser.add_argument("--end-date", type=str, default=yesterday)
+    parser.add_argument(
+        "--no-year-to-date",
+        action="store_true",
+        help="Only load bronze for [start-date, end-date] exactly (no Jan 1 expansion).",
+    )
+    parser.add_argument("--bucket", type=str, default=cfg.s3_bucket)
+    parser.add_argument("--bronze-prefix", type=str, default=cfg.raw_statcast_prefix)
+    parser.add_argument("--silver-prefix", type=str, default=cfg.feature_prefix)
+    parser.add_argument("--min-pitches-pitcher", type=int, default=500)
+    parser.add_argument("--min-pitches-batter", type=int, default=500)
+    parser.add_argument("--min-batted-ball-batter", type=int, default=200)
+    parser.add_argument("--hard-hit-speed-mph", type=float, default=95.0)
+    parser.add_argument("--min-pitches-per-pitch-type", type=int, default=15)
+    parser.add_argument("--raw-running-prefix", type=str, default=cfg.raw_running_prefix)
+    parser.add_argument("--sprint-speed-min-opp", type=int, default=10)
+    parser.add_argument("--raw-defence-prefix", type=str, default=cfg.raw_defence_prefix)
+    args = parser.parse_args()
 
+    result = build_bronze_to_silver_features(
+        bucket=args.bucket,
+        bronze_statcast_prefix=args.bronze_prefix,
+        silver_prefix=args.silver_prefix,
+        start_date_str=args.start_date,
+        end_date_str=args.end_date,
+        year_to_date=not args.no_year_to_date,
+        min_pitches_pitcher=args.min_pitches_pitcher,
+        min_pitches_batter=args.min_pitches_batter,
+        min_batted_ball_batter=args.min_batted_ball_batter,
+        hard_hit_speed_mph=args.hard_hit_speed_mph,
+        min_pitches_per_pitch_type=args.min_pitches_per_pitch_type,
+        raw_running_prefix=args.raw_running_prefix,
+        sprint_speed_min_opp=args.sprint_speed_min_opp,
+        raw_defence_prefix=args.raw_defence_prefix,
+    )
+
+    if result["status"] == "error":
+        logger.error(result["message"])
+        raise SystemExit(1)
+    if result["status"] == "no_data":
+        logger.warning(result["message"])
+    else:
+        logger.info(result["message"])
+
+
+def bronze_to_silver_features_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    y = yesterday_utc_date_str()
+    cfg = PipelineSettings.from_environ()
+    start_date = event_or_env_str(event, "start_date", "START_DATE", y)
+    end_date = event_or_env_str(event, "end_date", "END_DATE", y)
+    bucket = event_or_env_str(event, "s3_bucket", "S3_BUCKET", cfg.s3_bucket)
+    bronze_prefix = event_or_env_str(event, "bronze_prefix", "RAW_PREFIX", cfg.raw_statcast_prefix)
+    silver_prefix = event_or_env_str(event, "silver_prefix", "FEATURE_PREFIX", cfg.feature_prefix)
+    raw_running = event_or_env_str(
+        event, "raw_running_prefix", "RAW_RUNNING_PREFIX", cfg.raw_running_prefix
+    )
+    raw_defence = event_or_env_str(
+        event, "raw_defence_prefix", "RAW_DEFENCE_PREFIX", cfg.raw_defence_prefix
+    )
+    yt_raw = event_or_env_str(event, "year_to_date", "YEAR_TO_DATE", "true")
+    year_to_date = str(yt_raw).strip().lower() not in ("0", "false", "no")
+
+    result = build_bronze_to_silver_features(
+        bucket=bucket,
+        bronze_statcast_prefix=bronze_prefix,
+        silver_prefix=silver_prefix,
+        start_date_str=start_date,
+        end_date_str=end_date,
+        year_to_date=year_to_date,
+        raw_running_prefix=raw_running,
+        raw_defence_prefix=raw_defence,
+    )
+
+    status_code = 200 if result.get("status") in ("ok", "no_data") else 400
+    return {
+        "statusCode": status_code,
+        "body": result.get("message", ""),
+        "details": result,
+    }
+
+
+def main() -> None:
     run_bronze_to_silver_features_main()
 
 
-def handler(event: dict, context) -> dict:
-    from ..pipeline.handlers import bronze_to_silver_features_handler
-
+def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     return bronze_to_silver_features_handler(event, context)
 
 

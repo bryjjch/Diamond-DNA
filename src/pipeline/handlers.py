@@ -8,47 +8,8 @@ from .runtime import (
     current_utc_year,
     event_or_env_int,
     event_or_env_str,
-    yesterday_utc_date_str,
 )
 from .settings import PipelineSettings
-
-
-def bronze_to_silver_features_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    from ..silver.bronze_to_silver_features import build_bronze_to_silver_features
-
-    y = yesterday_utc_date_str()
-    cfg = PipelineSettings.from_environ()
-    start_date = event_or_env_str(event, "start_date", "START_DATE", y)
-    end_date = event_or_env_str(event, "end_date", "END_DATE", y)
-    bucket = event_or_env_str(event, "s3_bucket", "S3_BUCKET", cfg.s3_bucket)
-    bronze_prefix = event_or_env_str(event, "bronze_prefix", "RAW_PREFIX", cfg.raw_statcast_prefix)
-    silver_prefix = event_or_env_str(event, "silver_prefix", "FEATURE_PREFIX", cfg.feature_prefix)
-    raw_running = event_or_env_str(
-        event, "raw_running_prefix", "RAW_RUNNING_PREFIX", cfg.raw_running_prefix
-    )
-    raw_defence = event_or_env_str(
-        event, "raw_defence_prefix", "RAW_DEFENCE_PREFIX", cfg.raw_defence_prefix
-    )
-    yt_raw = event_or_env_str(event, "year_to_date", "YEAR_TO_DATE", "true")
-    year_to_date = str(yt_raw).strip().lower() not in ("0", "false", "no")
-
-    result = build_bronze_to_silver_features(
-        bucket=bucket,
-        bronze_statcast_prefix=bronze_prefix,
-        silver_prefix=silver_prefix,
-        start_date_str=start_date,
-        end_date_str=end_date,
-        year_to_date=year_to_date,
-        raw_running_prefix=raw_running,
-        raw_defence_prefix=raw_defence,
-    )
-
-    status_code = 200 if result.get("status") in ("ok", "no_data") else 400
-    return {
-        "statusCode": status_code,
-        "body": result.get("message", ""),
-        "details": result,
-    }
 
 
 def silver_to_gold_preprocessing_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -243,8 +204,3 @@ def gold_archetype_clustering_handler(event: Dict[str, Any], context: Any) -> Di
         "body": result.get("message", ""),
         "details": result,
     }
-
-
-def statcast_by_player_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    """Backward-compatible name; invokes bronze→silver features."""
-    return bronze_to_silver_features_handler(event, context)
