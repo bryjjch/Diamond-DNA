@@ -1,5 +1,7 @@
-pybaseball
-pandas
-pyarrow
-boto3
-requests
+# Bronze Statcast ingest: pybaseball + lake I/O (aligned with pyproject dependencies).
+pybaseball>=2.0
+pandas>=2.0
+numpy>=1.24
+pyarrow>=14.0
+boto3>=1.28
+requests>=2.28

@@ -12,7 +12,7 @@ output "statcast_ingestion_lambda_function_arn" {
 }
 
 output "statcast_ingestion_ecr_repository_url" {
-  description = "ECR repository URL for the bronze pitch ingestion Lambda image (build: docker build --platform linux/amd64 -f docker/bronze/Dockerfile .)"
+  description = "ECR repository URL for the bronze pitch ingestion Lambda image (build: docker build --platform linux/amd64 --provenance=false -f docker/bronze/Dockerfile .)"
   value       = module.lambda.ecr_repository_url
 }
 
@@ -27,6 +27,6 @@ output "statcast_by_player_lambda_function_arn" {
 }
 
 output "statcast_by_player_ecr_repository_url" {
-  description = "ECR repository URL for the silver feature Lambda image (build: docker build --platform linux/amd64 -f docker/silver-lambda/Dockerfile .)"
+  description = "ECR repository URL for the silver feature Lambda image (build: docker build --platform linux/amd64 --provenance=false -f docker/silver/lambda/Dockerfile .)"
   value       = module.lambda.by_player_ecr_repository_url
 }

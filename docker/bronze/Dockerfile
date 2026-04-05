@@ -1,5 +1,6 @@
-# Build from repo root (context = .): docker build --platform linux/amd64 -f docker/bronze/Dockerfile .
-# Stage 1: install dependencies in an image that can build from source
+# Bronze layer — AWS Lambda: Statcast pitch ingest → S3 (src.bronze.statcast_ingestion.handler).
+# Build from repo root: docker build --platform linux/amd64 --provenance=false -f docker/bronze/Dockerfile .
+# Stage 1: install dependencies in an image that can build wheels
 FROM python:3.11-slim-bookworm AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \

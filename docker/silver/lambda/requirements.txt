@@ -1,0 +1,5 @@
+# Matches project runtime for silver (pandas / S3 / Parquet). No pybaseball — silver reads bronze only.
+pandas>=2.0
+numpy>=1.24
+pyarrow>=14.0
+boto3>=1.28
