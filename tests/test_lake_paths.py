@@ -6,6 +6,8 @@ from src.pipeline.s3_interaction import (
     gold_archetype_assignments_key,
     gold_archetype_clustering_metadata_key,
     gold_archetype_clustering_model_key,
+    gold_player_similar_neighbors_key,
+    gold_player_similarity_metadata_key,
     gold_player_year_output_key,
     gold_preprocessing_metadata_key,
     raw_defence_dataset_key,
@@ -64,4 +66,13 @@ def test_gold_archetype_clustering_keys():
     )
     assert gold_archetype_clustering_metadata_key("gold/statcast", "pitcher", 2022) == (
         "gold/statcast/pitcher/year=2022/archetype_clustering_metadata.json"
+    )
+
+
+def test_gold_player_similarity_keys():
+    assert gold_player_similar_neighbors_key("gold/statcast", "batter", 2024) == (
+        "gold/statcast/batter/year=2024/player_year_similar_neighbors.parquet"
+    )
+    assert gold_player_similarity_metadata_key("gold/statcast", "pitcher", 2023) == (
+        "gold/statcast/pitcher/year=2023/player_similarity_metadata.json"
     )
