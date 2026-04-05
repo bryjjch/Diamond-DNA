@@ -147,7 +147,8 @@ resource "aws_iam_role_policy" "s3_put" {
 }
 
 # Lambda function (container image from ECR)
-# Image must be built from repo root: docker build --platform linux/amd64 --provenance=false -f docker/bronze/Dockerfile -t <ecr_repo_url>:<tag> .
+# Bronze image: docker build --platform linux/amd64 --provenance=false -f docker/bronze/Dockerfile -t <ecr_repo_url>:<tag> .
+# Silver image: docker build --platform linux/amd64 --provenance=false -f docker/silver/lambda/Dockerfile -t <by_player_ecr_url>:<tag> .
 # (must use provenance=false for a compatible lambda image)
 # Then push: aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <account>.dkr.ecr.<region>.amazonaws.com
 #            docker push <ecr_repo_url>:<tag>
