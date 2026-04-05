@@ -50,7 +50,8 @@ def test_archetype_cluster_label_mappings():
     assert archetype_cluster_label("unknown_role", 0) == "Cluster 0"
 
 
-def test_numeric_feature_columns_excludes_imputation_flags_pt_junk_xwoba():
+def test_numeric_feature_columns_does_not_filter_gold_dropped_columns():
+    """Clustering uses every numeric column except ids / pitch count; gold must drop the rest."""
     df = pd.DataFrame(
         {
             "player_id": [1],
@@ -70,13 +71,13 @@ def test_numeric_feature_columns_excludes_imputation_flags_pt_junk_xwoba():
     )
     df_i = prepare_dataframe_for_archetype_clustering(df)
     cols = numeric_feature_columns(df_i)
-    assert "foo_was_missing" not in cols
-    assert "pitch_type_UN_share" not in cols
-    assert "pitch_type_FF_share" not in cols
+    assert "foo_was_missing" in cols
+    assert "pitch_type_UN_share" in cols
+    assert "pitch_type_FF_share" in cols
     assert "pitch_type_entropy" in cols
-    assert "pt_FF_release_speed_mean" not in cols
-    assert "xwoba_allowed_lhb_mean" not in cols
-    assert "xwoba_allowed_rhb_mean" not in cols
+    assert "pt_FF_release_speed_mean" in cols
+    assert "xwoba_allowed_lhb_mean" in cols
+    assert "xwoba_allowed_rhb_mean" in cols
     assert "platoon_xwoba_allowed_diff" in cols
     assert "delta_run_exp_mean" in cols
 

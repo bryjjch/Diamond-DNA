@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gold player-year archetype clustering: StandardScaler → PCA → Gaussian Mixture (fixed PCA dims and n_components)."""
+"""Gold player-year archetype clustering: StandardScaler → PCA → Gaussian Mixture."""
 
 from __future__ import annotations
 
@@ -75,45 +75,6 @@ def archetype_cluster_label(role: str, cluster_id: int) -> str:
     return table.get(int(cluster_id), f"Cluster {int(cluster_id)}")
 
 
-# Excluded ``pitch_type_<PT>_share`` columns (arsenal summarized by ``pitch_type_entropy`` only).
-PITCH_TYPE_SHARE_CODES_EXCLUDED: frozenset[str] = frozenset(
-    {
-        "UN",
-        "NONE",
-        "PO",
-        "EP",
-        "FA",
-        "CS",
-        "SC",
-        "FO",
-        "KN",
-        "CH",
-        "CU",
-        "FC",
-        "FF",
-        "FS",
-        "KC",
-        "SI",
-        "SL",
-        "ST",
-        "SV",
-    }
-)
-
-
-def _is_column_excluded_from_archetype_features(col: str) -> bool:
-    if col.endswith("_was_missing"):
-        return True
-    if col.startswith("pt_"):
-        return True
-    if col in ("xwoba_allowed_lhb_mean", "xwoba_allowed_rhb_mean"):
-        return True
-    for pt in PITCH_TYPE_SHARE_CODES_EXCLUDED:
-        if col == f"pitch_type_{pt}_share":
-            return True
-    return False
-
-
 def prepare_dataframe_for_archetype_clustering(df: pd.DataFrame) -> pd.DataFrame:
     """
     Move identity / volume columns to the index so they are never used as model features.
@@ -156,43 +117,41 @@ def _config_for_role(
     default: Optional[ArchetypeClusteringConfig],
     configs_by_role: Optional[ArchetypeClusteringConfigsByRole],
 ) -> ArchetypeClusteringConfig:
+    """Get the clustering configuration for a role."""
     if role not in ("pitcher", "batter"):
         raise ValueError(f"role must be 'pitcher' or 'batter'; got {role!r}")
     if configs_by_role is not None:
+        # Return the clustering configuration for the role.
         return configs_by_role.pitcher if role == "pitcher" else configs_by_role.batter
     if default is not None:
+        # Return the default clustering configuration.
         return default
+    # Raise an error if no clustering configuration is provided.
     raise ValueError("No clustering config: pass config= or configs_by_role=.")
 
 
 def numeric_feature_columns(df: pd.DataFrame) -> List[str]:
     """
-    Numeric columns used for PCA / mixture model after gold preprocessing.
+    Numeric columns used for PCA / mixture model.
 
-    Excludes: ``player_id`` / ``year`` / ``role`` / ``n_pitches_total`` (use index via
-    ``prepare_dataframe_for_archetype_clustering``), imputation flags ``*_was_missing``,
-    all ``pt_*`` pitch-type physics columns, listed ``pitch_type_*_share`` columns (junk +
-    core types; entropy retained), and redundant platoon xwoba means.
+    Identity / volume fields are excluded here: ``player_id``,
+    ``year``, ``role``, and ``n_pitches_total`` (moved to the index first via
+    ``prepare_dataframe_for_archetype_clustering``).
     """
     id_set = set(ID_COLUMNS) | set(EXCLUDED_FROM_CLUSTERING)
     numeric = df.select_dtypes(include=[np.number]).columns.tolist()
-    out: List[str] = []
-    for c in numeric:
-        if c in id_set:
-            continue
-        if _is_column_excluded_from_archetype_features(c):
-            continue
-        out.append(c)
-    return sorted(out)
+    return sorted(c for c in numeric if c not in id_set)
 
 
 def _fit_pca_fixed(
     X_scaled: np.ndarray,
     cfg: ArchetypeClusteringConfig,
 ) -> tuple[PCA, int, List[float], float]:
-    """Fit PCA with ``cfg.pca_n_components`` (clamped to valid rank)."""
+    """Fit PCA with ``cfg.pca_n_components``."""
     n_samples, n_features = X_scaled.shape
+    # Calculate the maximum rank.
     max_rank = min(n_features, max(1, n_samples - 1))
+    # Calculate the number of components to keep.
     n_keep = min(int(cfg.pca_n_components), max_rank)
     if n_keep < 1:
         raise ValueError(
@@ -205,9 +164,12 @@ def _fit_pca_fixed(
             max_rank,
             n_keep,
         )
+    # Fit the PCA model.
     pca = PCA(n_components=n_keep, random_state=cfg.random_state)
     pca.fit(X_scaled)
+    # Get the explained variance ratio.
     evr = pca.explained_variance_ratio_.tolist()
+    # Get the total explained variance.
     total_var = float(np.sum(pca.explained_variance_ratio_))
     return pca, n_keep, evr, total_var
 
@@ -234,33 +196,45 @@ def fit_archetype_clustering(
         raise ValueError(
             f"covariance_type must be one of {sorted(_VALID_GMM_COVARIANCE)}; got {config.covariance_type!r}."
         )
-
+    # Prepare the dataframe for archetype clustering.
     df_work = prepare_dataframe_for_archetype_clustering(df)
+    # Get the index columns.
     index_cols = [c for c in ARCHETYPE_CLUSTER_INDEX if c in df.columns]
+    # Get the numeric feature columns.
     feature_cols = numeric_feature_columns(df_work)
+    # Raise an error if no numeric feature columns are found.
     if not feature_cols:
         raise ValueError("No numeric feature columns after exclusions.")
 
+    # Convert the feature columns to a numpy array.
     X = df_work[feature_cols].to_numpy(dtype=np.float64, copy=True)
+    # Raise an error if there are any NaN values in the feature matrix.
     if np.isnan(X).any():
         raise ValueError("NaN in feature matrix; expected gold-preprocessed inputs.")
 
+    # Get the number of samples.
     n_samples = X.shape[0]
+    # Raise an error if there are too few samples for clustering.
     if n_samples < MIN_SAMPLES_FOR_CLUSTERING:
         raise ValueError(
             f"Need at least {MIN_SAMPLES_FOR_CLUSTERING} rows for clustering; got {n_samples}."
         )
+    # Raise an error if the number of clusters exceeds the number of samples.
     if config.n_clusters > n_samples:
         raise ValueError(
             f"n_clusters ({config.n_clusters}) cannot exceed n_samples ({n_samples})."
         )
 
+    # Fit the scaler.
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
+    # Fit the PCA model.
     pca, n_comp, evr_list, total_explained = _fit_pca_fixed(X_scaled, config)
+    # Transform the scaled features to PCA space.
     X_pca = pca.transform(X_scaled)
 
+    # Fit the Gaussian Mixture model.
     gmm = GaussianMixture(
         n_components=config.n_clusters,
         covariance_type=config.covariance_type,
@@ -268,23 +242,30 @@ def fit_archetype_clustering(
         n_init=config.n_init,
     )
     gmm.fit(X_pca)
+    # Get the cluster labels.
     labels = gmm.predict(X_pca)
 
+    # Calculate the silhouette score.
     sil = float("nan")
     if config.n_clusters >= 2 and n_samples > config.n_clusters:
         try:
             sil = float(silhouette_score(X_pca, labels))
         except ValueError:
             pass
+    # Calculate the Davies-Bouldin score.
     db = float("nan")
     try:
         db = float(davies_bouldin_score(X_pca, labels))
     except ValueError:
         pass
+    # Calculate the AIC score.
     gmm_aic = float(gmm.aic(X_pca))
+    # Calculate the BIC score.
     gmm_bic = float(gmm.bic(X_pca))
+    # Calculate the lower bound.
     gmm_lower_bound = float(gmm.lower_bound_)
 
+    # Reset the index and add the cluster labels.
     out = df_work.reset_index()
     out["cluster_id"] = labels.astype(np.int64)
 
@@ -299,11 +280,8 @@ def fit_archetype_clustering(
         "feature_columns_sha256_16": feature_hash,
         "clustering_index_columns": index_cols,
         "feature_exclusion_rules": [
-            "player_id, year, role, n_pitches_total → index (when present as columns)",
-            "columns ending with _was_missing",
-            "columns starting with pt_",
-            "pitch_type_<PT>_share for PT in PITCH_TYPE_SHARE_CODES_EXCLUDED (incl. core CH/CU/FC/FF/FS/KC/SI/SL/ST/SV + junk types); pitch_type_entropy kept",
-            "xwoba_allowed_lhb_mean, xwoba_allowed_rhb_mean",
+            "player_id, year, role, n_pitches_total → not used as PCA/GMM features (index via prepare_dataframe_for_archetype_clustering when present as columns)",
+            "All other column selection for clustering is done in silver_to_gold_preprocessing (archetype-training drop pass)",
         ],
         "pca_n_components": n_comp,
         "pca_explained_variance_ratio": evr_list,
@@ -338,12 +316,14 @@ def fit_archetype_clustering(
 
 
 def _write_json_to_s3(bucket: str, key: str, payload: Mapping[str, Any]) -> None:
+    """Write JSON to S3."""
     client = get_s3_client()
     body = json.dumps(payload, indent=2, sort_keys=True, default=str).encode()
     client.put_object(Bucket=bucket, Key=key, Body=body, ContentType="application/json")
 
 
 def _write_joblib_to_s3(bundle: Dict[str, Any], bucket: str, key: str) -> None:
+    """Write joblib to S3."""
     client = get_s3_client()
     buf = io.BytesIO()
     joblib.dump(bundle, buf)
@@ -372,6 +352,7 @@ def build_gold_archetype_clustering(
     (pitcher vs batter). When ``role_filter`` is ``pitcher`` or ``batter``, only that role's
     entry from ``configs_by_role`` is used; the other is ignored.
     """
+    # Raise an error if no clustering configuration is provided.
     if config is None and configs_by_role is None:
         return {
             "status": "error",
@@ -416,6 +397,7 @@ def build_gold_archetype_clustering(
 
     try:
         for r in roles:
+            # Get the clustering configuration for the role.
             _config_for_role(r, default=config, configs_by_role=configs_by_role)
     except ValueError as exc:
         return {
@@ -433,19 +415,23 @@ def build_gold_archetype_clustering(
 
     for role in roles:
         for year in range(start_year, end_year + 1):
+            # Read the gold player-year output.
             in_key = gold_player_year_output_key(gold_prefix, role, year)
             df = read_parquet_from_s3(bucket, in_key, missing_key_log="none")
             if df is None or df.empty:
                 continue
 
+            # Add role column if not present.
             if "role" not in df.columns:
                 df = df.copy()
                 df["role"] = role
 
             try:
+                # Get the clustering configuration for the role.
                 role_cfg = _config_for_role(
                     role, default=config, configs_by_role=configs_by_role
                 )
+                # Fit the archetype clustering.
                 labeled, metadata, bundle = fit_archetype_clustering(
                     df, role=role, year=year, config=role_cfg
                 )
@@ -455,15 +441,19 @@ def build_gold_archetype_clustering(
                 errors.append(msg)
                 continue
 
+            # Write the archetype assignments to S3.
             out_parquet_key = gold_archetype_assignments_key(gold_prefix, role, year)
             write_parquet_to_s3(labeled, bucket, out_parquet_key, log_write=False)
 
+            # Write the archetype clustering model to S3.
             model_key = gold_archetype_clustering_model_key(gold_prefix, role, year)
             _write_joblib_to_s3(bundle, bucket, model_key)
 
+            # Write the archetype clustering metadata to S3.
             meta_key = gold_archetype_clustering_metadata_key(gold_prefix, role, year)
             _write_json_to_s3(bucket, meta_key, metadata)
 
+            # Update counters.
             n = int(len(labeled))
             rows_written += n
             years_written.add(year)
@@ -487,6 +477,7 @@ def build_gold_archetype_clustering(
                 out_parquet_key,
             )
 
+    # Raise an error if no data was written and no errors occurred.
     if rows_written == 0 and not errors:
         return {
             "status": "no_data",
@@ -499,6 +490,7 @@ def build_gold_archetype_clustering(
             "errors": [],
         }
 
+    # Raise an error if no data was written and errors occurred.
     if rows_written == 0 and errors:
         return {
             "status": "no_data",
