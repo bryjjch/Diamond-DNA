@@ -24,6 +24,12 @@ dev = [
     "moto[s3]>=5.0",
     "matplotlib>=3.7",
 ]
+web = [
+    "flask>=3.0",
+]
+
+[project.scripts]
+diamond-dna-web = "src.webapp.app:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
