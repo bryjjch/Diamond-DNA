@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 import logging
 from dataclasses import asdict, dataclass, field
@@ -409,91 +408,15 @@ def build_silver_to_gold_preprocessing(
 
 
 def main() -> None:
-    from ..pipeline.runtime import current_utc_year
-    from ..pipeline.settings import PipelineSettings
+    from ..pipeline.cli import run_silver_to_gold_preprocessing_main
 
-    cfg = PipelineSettings.from_environ()
-    cy = current_utc_year()
-    parser = argparse.ArgumentParser(
-        description="Build gold preprocessed player-year feature tables from silver outputs."
-    )
-    parser.add_argument("--start-year", type=int, default=cy - 1)
-    parser.add_argument("--end-year", type=int, default=cy)
-    parser.add_argument("--bucket", type=str, default=cfg.s3_bucket)
-    parser.add_argument("--silver-prefix", type=str, default=cfg.feature_prefix)
-    parser.add_argument("--gold-prefix", type=str, default=cfg.gold_prefix)
-    parser.add_argument(
-        "--role",
-        choices=("all", "batter", "pitcher"),
-        default="all",
-        help="Run preprocessing for both roles or one specific role.",
-    )
-    parser.add_argument("--correlation-threshold", type=float, default=0.95)
-    parser.add_argument("--near-zero-variance-unique-ratio", type=float, default=0.005)
-    args = parser.parse_args()
-
-    result = build_silver_to_gold_preprocessing(
-        bucket=args.bucket,
-        silver_prefix=args.silver_prefix,
-        gold_prefix=args.gold_prefix,
-        start_year=args.start_year,
-        end_year=args.end_year,
-        role_filter=args.role,
-        correlation_threshold=args.correlation_threshold,
-        near_zero_variance_unique_ratio=args.near_zero_variance_unique_ratio,
-    )
-
-    if result["status"] == "error":
-        logger.error(result["message"])
-        raise SystemExit(1)
-    if result["status"] == "no_data":
-        logger.warning(result["message"])
-    else:
-        logger.info(result["message"])
+    run_silver_to_gold_preprocessing_main()
 
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    from ..pipeline.runtime import (
-        current_utc_year,
-        event_or_env_int,
-        event_or_env_str,
-    )
-    from ..pipeline.settings import PipelineSettings
+    from ..pipeline.handlers import silver_to_gold_preprocessing_handler
 
-    cy = current_utc_year()
-    cfg = PipelineSettings.from_environ()
-    start_year = event_or_env_int(event, "start_year", "START_YEAR", cy - 1)
-    end_year = event_or_env_int(event, "end_year", "END_YEAR", cy)
-    bucket = event_or_env_str(event, "s3_bucket", "S3_BUCKET", cfg.s3_bucket)
-    silver_prefix = event_or_env_str(event, "silver_prefix", "FEATURE_PREFIX", cfg.feature_prefix)
-    gold_prefix = event_or_env_str(event, "gold_prefix", "GOLD_PREFIX", cfg.gold_prefix)
-    role = event_or_env_str(event, "role", "ROLE", "all")
-    corr_raw = event_or_env_str(event, "correlation_threshold", "CORRELATION_THRESHOLD", "0.95")
-    nzv_raw = event_or_env_str(
-        event,
-        "near_zero_variance_unique_ratio",
-        "NEAR_ZERO_VARIANCE_UNIQUE_RATIO",
-        "0.005",
-    )
-    correlation_threshold = float(corr_raw)
-    near_zero_variance_unique_ratio = float(nzv_raw)
-
-    result = build_silver_to_gold_preprocessing(
-        bucket=bucket,
-        silver_prefix=silver_prefix,
-        gold_prefix=gold_prefix,
-        start_year=start_year,
-        end_year=end_year,
-        role_filter=role,
-        correlation_threshold=correlation_threshold,
-        near_zero_variance_unique_ratio=near_zero_variance_unique_ratio,
-    )
-    status_code = 200 if result.get("status") in ("ok", "no_data") else 400
-    return {
-        "statusCode": status_code,
-        "body": result.get("message", ""),
-        "details": result,
-    }
+    return silver_to_gold_preprocessing_handler(event, context)
 
 
 if __name__ == "__main__":

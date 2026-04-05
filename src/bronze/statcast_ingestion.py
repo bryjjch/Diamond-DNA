@@ -6,9 +6,7 @@ Fetches pitch-level Statcast data from pybaseball for a date range
 and uploads each day to S3 as Parquet at {s3_prefix}/year=Y/date=D/statcast_pitches.parquet.
 """
 
-import argparse
 import logging
-import sys
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
@@ -17,9 +15,7 @@ from pybaseball import statcast
 
 from .ingest_common import retry_with_backoff
 from ..pipeline.s3_interaction import raw_statcast_day_key
-from ..pipeline.runtime import event_or_env_str, yesterday_utc_date_str
 from ..pipeline.s3_interaction import write_parquet_to_s3
-from ..pipeline.settings import PipelineSettings
 
 # Configure logging
 logging.basicConfig(
@@ -161,74 +157,15 @@ def ingest_date_range(start_date_str: str, end_date_str: str, s3_bucket: str, s3
 
 
 def main() -> None:
-    cfg = PipelineSettings.from_environ()
-    yesterday = yesterday_utc_date_str()
-    parser = argparse.ArgumentParser(
-        description="Ingest Statcast pitch data from pybaseball to S3 (date range; one file per day)"
-    )
-    parser.add_argument("--start-date", type=str, default=yesterday)
-    parser.add_argument("--end-date", type=str, default=yesterday)
-    parser.add_argument("--s3-bucket", type=str, default=cfg.s3_bucket)
-    parser.add_argument(
-        "--s3-prefix",
-        type=str,
-        default=cfg.raw_statcast_prefix,
-        help="S3 prefix for bronze Statcast pitches (env: S3_PREFIX or RAW_PREFIX)",
-    )
-    args = parser.parse_args()
+    from ..pipeline.cli import run_statcast_ingestion_main
 
-    result = ingest_date_range(args.start_date, args.end_date, args.s3_bucket, args.s3_prefix)
-
-    if result["status"] == "error":
-        logger.error(result["message"])
-        if result.get("errors"):
-            for err in result["errors"]:
-                logger.error(err)
-        sys.exit(1)
-    if result["status"] == "partial":
-        logger.warning(result["message"])
-        for err in result.get("errors", []):
-            logger.warning(err)
-        sys.exit(1)
-    logger.info(result["message"])
-    sys.exit(0)
+    run_statcast_ingestion_main()
 
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    y = yesterday_utc_date_str()
-    cfg = PipelineSettings.from_environ()
-    start_date = event_or_env_str(event, "start_date", "START_DATE", y)
-    end_date = event_or_env_str(event, "end_date", "END_DATE", y)
-    s3_bucket = event_or_env_str(event, "s3_bucket", "S3_BUCKET", cfg.s3_bucket)
-    s3_prefix = event_or_env_str(
-        event, "s3_prefix", "S3_PREFIX", cfg.raw_statcast_prefix
-    )
+    from ..pipeline.handlers import statcast_ingestion_handler
 
-    result = ingest_date_range(start_date, end_date, s3_bucket, s3_prefix)
-
-    if result["status"] == "error":
-        return {
-            "statusCode": 400,
-            "body": result["message"],
-            "errors": result.get("errors", []),
-        }
-    if result["status"] == "partial":
-        return {
-            "statusCode": 207,
-            "body": result["message"],
-            "total_records": result["total_records"],
-            "days_ok": result["days_ok"],
-            "days_no_data": result["days_no_data"],
-            "days_error": result["days_error"],
-            "errors": result.get("errors", []),
-        }
-    return {
-        "statusCode": 200,
-        "body": result["message"],
-        "total_records": result["total_records"],
-        "days_ok": result["days_ok"],
-        "days_no_data": result["days_no_data"],
-    }
+    return statcast_ingestion_handler(event, context)
 
 
 if __name__ == "__main__":

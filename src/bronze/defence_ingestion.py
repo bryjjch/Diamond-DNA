@@ -12,10 +12,8 @@ Default s3_prefix: bronze/defence
 
 from __future__ import annotations
 
-import argparse
 import io
 import logging
-import sys
 from datetime import datetime, timezone
 from typing import Any, List, Optional
 
@@ -39,11 +37,6 @@ except Exception:
 
 from .ingest_common import retry_with_backoff
 
-from ..pipeline.runtime import (
-    current_utc_year,
-    event_or_env_int,
-    event_or_env_str,
-)
 from ..pipeline.s3_interaction import (
     DEFENCE_ARM_STRENGTH_PARQUET,
     DEFENCE_CATCHER_FRAMING_PARQUET,
@@ -54,7 +47,6 @@ from ..pipeline.s3_interaction import (
     raw_defence_dataset_key,
     write_parquet_to_s3,
 )
-from ..pipeline.settings import PipelineSettings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -300,100 +292,16 @@ def ingest_year_range(
     }
 
 
-def _parse_min_qual_str(s: str, default: str | int) -> str | int:
-    """Parse a minimum qualification string into an integer or string."""
-    raw = str(s).strip() if s is not None else ""
-    if raw == "":
-        v = default
-        if isinstance(v, int):
-            return v
-        raw = str(v).strip()
-    return int(raw) if raw.isdigit() else raw
-
-
 def main() -> None:
-    cfg = PipelineSettings.from_environ()
-    cy = current_utc_year()
-    parser = argparse.ArgumentParser(description="Ingest defensive metrics to S3 (year range).")
-    parser.add_argument("--start-year", type=int, default=cy - 3)
-    parser.add_argument("--end-year", type=int, default=cy)
-    parser.add_argument("--s3-bucket", type=str, default=cfg.s3_bucket)
-    parser.add_argument("--s3-prefix", type=str, default=cfg.raw_defence_prefix)
-    parser.add_argument(
-        "--oaa-min-att",
-        type=str,
-        default="q",
-        help='Statcast OAA minimum attempts: "q" (qualified) or an integer.',
-    )
-    parser.add_argument("--arm-min-throws", type=int, default=50)
-    parser.add_argument("--framing-min-called", type=str, default="q")
-    parser.add_argument("--pop-min-2b", type=int, default=5)
-    parser.add_argument("--pop-min-3b", type=int, default=0)
-    parser.add_argument("--fangraphs-qual", type=int, default=None)
-    args = parser.parse_args()
+    from ..pipeline.cli import run_defence_ingestion_main
 
-    oaa_min: str | int = args.oaa_min_att
-    if oaa_min != "q" and str(oaa_min).isdigit():
-        oaa_min = int(oaa_min)
-
-    framing_min: str | int = args.framing_min_called
-    if framing_min != "q" and str(framing_min).isdigit():
-        framing_min = int(framing_min)
-
-    result = ingest_year_range(
-        args.start_year,
-        args.end_year,
-        args.s3_bucket,
-        args.s3_prefix,
-        oaa_min_att=oaa_min,
-        arm_min_throws=args.arm_min_throws,
-        framing_min_called=framing_min,
-        pop_min_2b=args.pop_min_2b,
-        pop_min_3b=args.pop_min_3b,
-        fangraphs_qual=args.fangraphs_qual,
-    )
-
-    if result["status"] == "error":
-        logger.error(result["message"])
-        for err in result.get("errors", []):
-            logger.error(err)
-        sys.exit(1)
-    if result["status"] == "partial":
-        logger.warning(result["message"])
-        for err in result.get("errors", []):
-            logger.warning(err)
-        sys.exit(1)
-    logger.info(result["message"])
-    sys.exit(0)
+    run_defence_ingestion_main()
 
 
 def handler(event: dict, context: Any) -> dict:
-    cy = current_utc_year()
-    cfg = PipelineSettings.from_environ()
-    start_year = event_or_env_int(event, "start_year", "START_YEAR", cy - 3)
-    end_year = event_or_env_int(event, "end_year", "END_YEAR", cy)
-    s3_bucket = event_or_env_str(event, "s3_bucket", "S3_BUCKET", cfg.s3_bucket)
-    s3_prefix = event_or_env_str(
-        event, "s3_prefix", "S3_PREFIX", cfg.raw_defence_prefix
-    )
+    from ..pipeline.handlers import defence_ingestion_handler
 
-    oaa_s = event_or_env_str(event, "oaa_min_att", "OAA_MIN_ATT", "q")
-    framing_s = event_or_env_str(event, "framing_min_called", "FRAMING_MIN_CALLED", "q")
-    ev = event if isinstance(event, dict) else {}
-    result = ingest_year_range(
-        start_year,
-        end_year,
-        s3_bucket,
-        s3_prefix,
-        oaa_min_att=_parse_min_qual_str(oaa_s, "q"),
-        arm_min_throws=event_or_env_int(event, "arm_min_throws", "ARM_MIN_THROWS", 50),
-        framing_min_called=_parse_min_qual_str(framing_s, "q"),
-        pop_min_2b=event_or_env_int(event, "pop_min_2b", "POP_MIN_2B", 5),
-        pop_min_3b=event_or_env_int(event, "pop_min_3b", "POP_MIN_3B", 0),
-        fangraphs_qual=ev.get("fangraphs_qual"),
-    )
-    status_code = 200 if result["status"] == "ok" else (207 if result["status"] == "partial" else 400)
-    return {"statusCode": status_code, **result}
+    return defence_ingestion_handler(event, context)
 
 
 if __name__ == "__main__":

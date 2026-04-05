@@ -11,15 +11,12 @@ season-to-date aggregates.
 
 from __future__ import annotations
 
-import argparse
 import logging
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import pandas as pd
 
-from ..pipeline.runtime import event_or_env_str, yesterday_utc_date_str
-from ..pipeline.settings import PipelineSettings
 from ..pipeline.s3_interaction import (
     feature_player_year_output_key,
     raw_statcast_day_key,
@@ -294,102 +291,15 @@ def build_bronze_to_silver_features(
     }
 
 
-def run_bronze_to_silver_features_main() -> None:
-    cfg = PipelineSettings.from_environ()
-    yesterday = yesterday_utc_date_str()
-    parser = argparse.ArgumentParser(
-        description=(
-            "Build silver player-year feature tables from bronze Statcast dailies. "
-            "By default loads year-to-date through --end-date for each affected season."
-        )
-    )
-    parser.add_argument("--start-date", type=str, default=yesterday)
-    parser.add_argument("--end-date", type=str, default=yesterday)
-    parser.add_argument(
-        "--no-year-to-date",
-        action="store_true",
-        help="Only load bronze for [start-date, end-date] exactly (no Jan 1 expansion).",
-    )
-    parser.add_argument("--bucket", type=str, default=cfg.s3_bucket)
-    parser.add_argument("--bronze-prefix", type=str, default=cfg.raw_statcast_prefix)
-    parser.add_argument("--silver-prefix", type=str, default=cfg.feature_prefix)
-    parser.add_argument("--min-pitches-pitcher", type=int, default=500)
-    parser.add_argument("--min-pitches-batter", type=int, default=500)
-    parser.add_argument("--min-batted-ball-batter", type=int, default=200)
-    parser.add_argument("--hard-hit-speed-mph", type=float, default=95.0)
-    parser.add_argument("--min-pitches-per-pitch-type", type=int, default=15)
-    parser.add_argument("--raw-running-prefix", type=str, default=cfg.raw_running_prefix)
-    parser.add_argument("--sprint-speed-min-opp", type=int, default=10)
-    parser.add_argument("--raw-defence-prefix", type=str, default=cfg.raw_defence_prefix)
-    args = parser.parse_args()
-
-    result = build_bronze_to_silver_features(
-        bucket=args.bucket,
-        bronze_statcast_prefix=args.bronze_prefix,
-        silver_prefix=args.silver_prefix,
-        start_date_str=args.start_date,
-        end_date_str=args.end_date,
-        year_to_date=not args.no_year_to_date,
-        min_pitches_pitcher=args.min_pitches_pitcher,
-        min_pitches_batter=args.min_pitches_batter,
-        min_batted_ball_batter=args.min_batted_ball_batter,
-        hard_hit_speed_mph=args.hard_hit_speed_mph,
-        min_pitches_per_pitch_type=args.min_pitches_per_pitch_type,
-        raw_running_prefix=args.raw_running_prefix,
-        sprint_speed_min_opp=args.sprint_speed_min_opp,
-        raw_defence_prefix=args.raw_defence_prefix,
-    )
-
-    if result["status"] == "error":
-        logger.error(result["message"])
-        raise SystemExit(1)
-    if result["status"] == "no_data":
-        logger.warning(result["message"])
-    else:
-        logger.info(result["message"])
-
-
-def bronze_to_silver_features_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    y = yesterday_utc_date_str()
-    cfg = PipelineSettings.from_environ()
-    start_date = event_or_env_str(event, "start_date", "START_DATE", y)
-    end_date = event_or_env_str(event, "end_date", "END_DATE", y)
-    bucket = event_or_env_str(event, "s3_bucket", "S3_BUCKET", cfg.s3_bucket)
-    bronze_prefix = event_or_env_str(event, "bronze_prefix", "RAW_PREFIX", cfg.raw_statcast_prefix)
-    silver_prefix = event_or_env_str(event, "silver_prefix", "FEATURE_PREFIX", cfg.feature_prefix)
-    raw_running = event_or_env_str(
-        event, "raw_running_prefix", "RAW_RUNNING_PREFIX", cfg.raw_running_prefix
-    )
-    raw_defence = event_or_env_str(
-        event, "raw_defence_prefix", "RAW_DEFENCE_PREFIX", cfg.raw_defence_prefix
-    )
-    yt_raw = event_or_env_str(event, "year_to_date", "YEAR_TO_DATE", "true")
-    year_to_date = str(yt_raw).strip().lower() not in ("0", "false", "no")
-
-    result = build_bronze_to_silver_features(
-        bucket=bucket,
-        bronze_statcast_prefix=bronze_prefix,
-        silver_prefix=silver_prefix,
-        start_date_str=start_date,
-        end_date_str=end_date,
-        year_to_date=year_to_date,
-        raw_running_prefix=raw_running,
-        raw_defence_prefix=raw_defence,
-    )
-
-    status_code = 200 if result.get("status") in ("ok", "no_data") else 400
-    return {
-        "statusCode": status_code,
-        "body": result.get("message", ""),
-        "details": result,
-    }
-
-
 def main() -> None:
+    from ..pipeline.cli import run_bronze_to_silver_features_main
+
     run_bronze_to_silver_features_main()
 
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    from ..pipeline.handlers import bronze_to_silver_features_handler
+
     return bronze_to_silver_features_handler(event, context)
 
 
