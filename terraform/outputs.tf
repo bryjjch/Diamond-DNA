@@ -69,6 +69,14 @@ output "api_ecr_repository_url" {
 }
 
 output "api_endpoint" {
-  description = "HTTPS base URL for the HTTP API (use as the API origin in the frontend / CloudFront distribution)"
+  description = "HTTPS base URL for the HTTP API (use as VITE_API_BASE_URL in Vercel)"
   value       = module.api.api_endpoint
+}
+
+# ============================================================================
+# CI/CD OUTPUTS
+# ============================================================================
+output "github_actions_role_arn" {
+  description = "IAM role ARN for GitHub Actions OIDC (paste into the AWS_DEPLOY_ROLE_ARN repo variable). Null when enable_cicd = false."
+  value       = var.enable_cicd ? module.cicd[0].github_actions_role_arn : null
 }

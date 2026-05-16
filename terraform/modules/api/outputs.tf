@@ -13,6 +13,11 @@ output "ecr_repository_url" {
   value       = aws_ecr_repository.api.repository_url
 }
 
+output "ecr_repository_arn" {
+  description = "ECR repository ARN for the HTTP API Lambda image"
+  value       = aws_ecr_repository.api.arn
+}
+
 output "api_endpoint" {
   description = "HTTPS endpoint for the HTTP API (use as the API base URL for the frontend / CloudFront origin)"
   value       = aws_apigatewayv2_api.api.api_endpoint

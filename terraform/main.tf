@@ -54,7 +54,6 @@ module "lambda" {
   depends_on = [module.s3]
 }
 
-
 # ============================================================================
 # API MODULE (HTTP API Lambda + API Gateway v2)
 # ============================================================================
@@ -79,4 +78,27 @@ module "api" {
   tags = var.tags
 
   depends_on = [module.s3]
+}
+
+
+# ============================================================================
+# CI/CD MODULE (GitHub Actions OIDC role for deploying the API Lambda)
+# ============================================================================
+# Opt-in: set `enable_cicd = true` after the first `terraform apply` so the
+# API module's ECR repo + Lambda exist before this role references them.
+# The output `github_actions_role_arn` is what you paste into GitHub repo
+# variables as AWS_DEPLOY_ROLE_ARN.
+module "cicd" {
+  source = "./modules/cicd"
+  count  = var.enable_cicd ? 1 : 0
+
+  name_prefix             = var.name_prefix
+  github_owner            = var.github_owner
+  github_repo             = var.github_repo
+  github_ref_pattern      = var.github_ref_pattern
+  create_oidc_provider    = var.create_github_oidc_provider
+  api_ecr_repository_arn  = module.api.ecr_repository_arn
+  api_lambda_function_arn = module.api.lambda_function_arn
+
+  tags = var.tags
 }
