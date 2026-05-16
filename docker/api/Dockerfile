@@ -2,17 +2,13 @@
 # Build from repo root: docker build --platform linux/amd64 --provenance=false -f docker/api/Dockerfile -t <ecr_url>:<tag> .
 # Push:  aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <account>.dkr.ecr.<region>.amazonaws.com
 #        docker push <ecr_url>:<tag>
-FROM python:3.11-slim-bookworm AS builder
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc g++ \
-    && rm -rf /var/lib/apt/lists/*
+FROM public.ecr.aws/lambda/python:3.12 AS builder
 
 WORKDIR /install
 COPY docker/api/requirements.txt .
 RUN pip install --no-cache-dir --target /install -r requirements.txt
 
-FROM public.ecr.aws/lambda/python:3.11
+FROM public.ecr.aws/lambda/python:3.12
 
 COPY --from=builder /install/ ${LAMBDA_TASK_ROOT}/
 COPY src/ ${LAMBDA_TASK_ROOT}/src/
