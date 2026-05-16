@@ -23,13 +23,12 @@ dev = [
     "pytest>=7.0",
     "moto[s3]>=5.0",
     "matplotlib>=3.7",
-]
-web = [
+    # Used only by src.api.local_server (Flask shim that wraps the Lambda
+    # handler so the React frontend can hit a local URL during development).
     "flask>=3.0",
 ]
 
 [project.scripts]
-diamond-dna-web = "src.webapp.app:main"
 diamond-dna-api = "src.api.local_server:main"
 
 [tool.setuptools.packages.find]
