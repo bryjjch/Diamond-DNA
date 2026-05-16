@@ -124,6 +124,37 @@ variable "log_retention_days" {
   default     = 14
 }
 
+# HTTP API Lambda (serves cluster browser + KNN endpoints to the frontend)
+variable "api_memory_size" {
+  description = "Lambda memory size in MB for the HTTP API"
+  type        = number
+  default     = 2048
+}
+
+variable "api_timeout" {
+  description = "Lambda timeout in seconds for the HTTP API"
+  type        = number
+  default     = 30
+}
+
+variable "api_image_tag" {
+  description = "ECR image tag for the HTTP API Lambda (e.g. latest)"
+  type        = string
+  default     = "latest"
+}
+
+variable "api_webapp_year" {
+  description = "Season year served by the HTTP API; empty string defers to the runtime default (UTC year - 1)"
+  type        = string
+  default     = ""
+}
+
+variable "api_cors_allow_origins" {
+  description = "Origins allowed by API Gateway CORS for the HTTP API"
+  type        = list(string)
+  default     = ["*"]
+}
+
 variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)

@@ -53,3 +53,30 @@ module "lambda" {
 
   depends_on = [module.s3]
 }
+
+
+# ============================================================================
+# API MODULE (HTTP API Lambda + API Gateway v2)
+# ============================================================================
+# Serves the cluster browser and KNN endpoints from precomputed gold parquet
+# tables. Replaces the Flask app's API surface; the React frontend (Phase 2/3)
+# calls these routes via CloudFront → API Gateway → Lambda.
+module "api" {
+  source = "./modules/api"
+
+  name_prefix           = var.name_prefix
+  data_lake_bucket_name = module.s3.data_lake_bucket_name
+  data_lake_bucket_arn  = module.s3.data_lake_bucket_arn
+  gold_s3_prefix        = var.statcast_gold_s3_prefix
+
+  webapp_year        = var.api_webapp_year
+  memory_size        = var.api_memory_size
+  timeout            = var.api_timeout
+  image_tag          = var.api_image_tag
+  log_retention_days = var.log_retention_days
+  cors_allow_origins = var.api_cors_allow_origins
+
+  tags = var.tags
+
+  depends_on = [module.s3]
+}

@@ -30,6 +30,7 @@ web = [
 
 [project.scripts]
 diamond-dna-web = "src.webapp.app:main"
+diamond-dna-api = "src.api.local_server:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

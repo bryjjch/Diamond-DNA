@@ -1,0 +1,9 @@
+# HTTP API Lambda: serves precomputed archetype / KNN tables as JSON.
+# scikit-learn + joblib are pulled in transitively via src.webapp.data_loader
+# (which imports the archetype label table from src.ml.archetype_clustering).
+pandas>=2.0
+numpy>=1.24
+pyarrow>=14.0
+boto3>=1.28
+scikit-learn>=1.3
+joblib>=1.3

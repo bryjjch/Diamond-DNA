@@ -49,3 +49,26 @@ output "statcast_gold_ecr_repository_url" {
   description = "ECR repository URL for the gold preprocessing Lambda image (build: docker build --platform linux/amd64 --provenance=false -f docker/gold/lambda/Dockerfile .)"
   value       = module.lambda.gold_ecr_repository_url
 }
+
+# ============================================================================
+# API OUTPUTS (HTTP API Lambda + API Gateway v2)
+# ============================================================================
+output "api_lambda_function_name" {
+  description = "Name of the HTTP API Lambda"
+  value       = module.api.lambda_function_name
+}
+
+output "api_lambda_function_arn" {
+  description = "ARN of the HTTP API Lambda"
+  value       = module.api.lambda_function_arn
+}
+
+output "api_ecr_repository_url" {
+  description = "ECR repository URL for the HTTP API Lambda image (build: docker build --platform linux/amd64 --provenance=false -f docker/api/Dockerfile .)"
+  value       = module.api.ecr_repository_url
+}
+
+output "api_endpoint" {
+  description = "HTTPS base URL for the HTTP API (use as the API origin in the frontend / CloudFront distribution)"
+  value       = module.api.api_endpoint
+}
