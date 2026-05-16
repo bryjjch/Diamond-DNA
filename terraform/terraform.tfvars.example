@@ -8,7 +8,7 @@
 # -----------------------------------------------------------------------------
 # Required (no defaults)
 # -----------------------------------------------------------------------------
-data_lake_bucket_name       = "diamond-dna"   # Medallion data lives under bronze/silver/gold prefixes
+data_lake_bucket_name       = "diamond-dna-data-lake"   # Medallion data lives under bronze/silver/gold prefixes
 
 # -----------------------------------------------------------------------------
 # General

@@ -11,8 +11,8 @@ resource "aws_ecr_repository" "statcast_ingestion" {
 }
 
 # ECR repository for the silver feature build Lambda image
-resource "aws_ecr_repository" "statcast_by_player" {
-  name                 = "${var.name_prefix}-statcast-by-player"
+resource "aws_ecr_repository" "silver_feature_build" {
+  name                 = "${var.name_prefix}-silver-feature-build"
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
@@ -22,9 +22,21 @@ resource "aws_ecr_repository" "statcast_by_player" {
   tags = var.tags
 }
 
-# IAM role for the by-player Lambda function
-resource "aws_iam_role" "statcast_by_player" {
-  name = "${var.name_prefix}-statcast-by-player-lambda"
+# ECR repository for the gold preprocessing Lambda image
+resource "aws_ecr_repository" "gold_preprocessing" {
+  name                 = "${var.name_prefix}-gold-preprocessing"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = var.tags
+}
+
+# IAM role for the bronze ingestion Lambda
+resource "aws_iam_role" "statcast_ingestion" {
+  name = "${var.name_prefix}-statcast-ingestion-lambda"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -42,16 +54,61 @@ resource "aws_iam_role" "statcast_by_player" {
   tags = var.tags
 }
 
-# Basic Lambda execution for by-player: CloudWatch Logs
-resource "aws_iam_role_policy_attachment" "by_player_lambda_basic" {
-  role       = aws_iam_role.statcast_by_player.name
+# Basic Lambda execution for bronze: CloudWatch Logs
+resource "aws_iam_role_policy_attachment" "statcast_ingestion_lambda_basic" {
+  role       = aws_iam_role.statcast_ingestion.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-# S3 access for by-player Lambda: read bronze Statcast, read/write silver features, read bronze side inputs, write gold.
-resource "aws_iam_role_policy" "by_player_s3_access" {
-  name = "${var.name_prefix}-statcast-by-player-s3"
-  role = aws_iam_role.statcast_by_player.id
+# S3 write access for bronze ingestion Lambda
+resource "aws_iam_role_policy" "statcast_ingestion_s3_access" {
+  name = "${var.name_prefix}-statcast-ingestion-s3"
+  role = aws_iam_role.statcast_ingestion.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject"
+        ]
+        Resource = "${var.data_lake_bucket_arn}/${var.s3_prefix}/*"
+      }
+    ]
+  })
+}
+
+# IAM role for the silver feature build Lambda
+resource "aws_iam_role" "silver_feature_build" {
+  name = "${var.name_prefix}-silver-feature-build-lambda"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = var.tags
+}
+
+# Basic Lambda execution for silver: CloudWatch Logs
+resource "aws_iam_role_policy_attachment" "silver_feature_build_lambda_basic" {
+  role       = aws_iam_role.silver_feature_build.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+# S3 access for silver Lambda: read bronze, read/write silver, write gold
+resource "aws_iam_role_policy" "silver_feature_build_s3_access" {
+  name = "${var.name_prefix}-silver-feature-build-s3"
+  role = aws_iam_role.silver_feature_build.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -87,23 +144,9 @@ resource "aws_iam_role_policy" "by_player_s3_access" {
   })
 }
 
-# CloudWatch log group for the ingestion Lambda
-resource "aws_cloudwatch_log_group" "statcast_ingestion" {
-  name              = "/aws/lambda/${var.name_prefix}-statcast-ingestion"
-  retention_in_days = var.log_retention_days
-  tags              = var.tags
-}
-
-# CloudWatch log group for the by-player Lambda
-resource "aws_cloudwatch_log_group" "statcast_by_player" {
-  name              = "/aws/lambda/${var.name_prefix}-statcast-by-player"
-  retention_in_days = var.log_retention_days
-  tags              = var.tags
-}
-
-# IAM role for the Lambda function
-resource "aws_iam_role" "statcast_ingestion" {
-  name = "${var.name_prefix}-statcast-ingestion-lambda"
+# IAM role for the gold preprocessing Lambda
+resource "aws_iam_role" "gold_preprocessing" {
+  name = "${var.name_prefix}-gold-preprocessing-lambda"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -121,16 +164,16 @@ resource "aws_iam_role" "statcast_ingestion" {
   tags = var.tags
 }
 
-# Basic Lambda execution: CloudWatch Logs
-resource "aws_iam_role_policy_attachment" "lambda_basic" {
-  role       = aws_iam_role.statcast_ingestion.name
+# Basic Lambda execution for gold: CloudWatch Logs
+resource "aws_iam_role_policy_attachment" "gold_preprocessing_lambda_basic" {
+  role       = aws_iam_role.gold_preprocessing.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-# S3 write access to the data lake bucket (Statcast prefix)
-resource "aws_iam_role_policy" "s3_put" {
-  name = "${var.name_prefix}-statcast-ingestion-s3"
-  role = aws_iam_role.statcast_ingestion.id
+# S3 access for gold Lambda: read silver, read/write gold
+resource "aws_iam_role_policy" "gold_preprocessing_s3_access" {
+  name = "${var.name_prefix}-gold-preprocessing-s3"
+  role = aws_iam_role.gold_preprocessing.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -138,21 +181,47 @@ resource "aws_iam_role_policy" "s3_put" {
       {
         Effect = "Allow"
         Action = [
+          "s3:GetObject"
+        ]
+        Resource = "${var.data_lake_bucket_arn}/${var.silver_s3_prefix}/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
           "s3:PutObject"
         ]
-        Resource = "${var.data_lake_bucket_arn}/${var.s3_prefix}/*"
+        Resource = "${var.data_lake_bucket_arn}/${var.gold_s3_prefix}/*"
       }
     ]
   })
 }
 
-# Lambda function (container image from ECR)
-# Bronze image: docker build --platform linux/amd64 --provenance=false -f docker/bronze/Dockerfile -t <ecr_repo_url>:<tag> .
-# Silver image: docker build --platform linux/amd64 --provenance=false -f docker/silver/lambda/Dockerfile -t <by_player_ecr_url>:<tag> .
-# (must use provenance=false for a compatible lambda image)
-# Then push: aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <account>.dkr.ecr.<region>.amazonaws.com
-#            docker push <ecr_repo_url>:<tag>
-# Use statcast_ingestion_image_tag (e.g. latest) so image_uri matches.
+# CloudWatch log group for the bronze ingestion Lambda
+resource "aws_cloudwatch_log_group" "statcast_ingestion" {
+  name              = "/aws/lambda/${var.name_prefix}-statcast-ingestion"
+  retention_in_days = var.log_retention_days
+  tags              = var.tags
+}
+
+# CloudWatch log group for the silver feature build Lambda
+resource "aws_cloudwatch_log_group" "silver_feature_build" {
+  name              = "/aws/lambda/${var.name_prefix}-silver-feature-build"
+  retention_in_days = var.log_retention_days
+  tags              = var.tags
+}
+
+# CloudWatch log group for the gold preprocessing Lambda
+resource "aws_cloudwatch_log_group" "gold_preprocessing" {
+  name              = "/aws/lambda/${var.name_prefix}-gold-preprocessing"
+  retention_in_days = var.log_retention_days
+  tags              = var.tags
+}
+
+# Bronze ingestion Lambda (container image from ECR)
+# Build: docker build --platform linux/amd64 --provenance=false -f docker/bronze/Dockerfile -t <ecr_url>:<tag> .
+# Push:  aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <account>.dkr.ecr.<region>.amazonaws.com
+#        docker push <ecr_url>:<tag>
 resource "aws_lambda_function" "statcast_ingestion" {
   function_name = "${var.name_prefix}-statcast-ingestion"
   role          = aws_iam_role.statcast_ingestion.arn
@@ -169,22 +238,21 @@ resource "aws_lambda_function" "statcast_ingestion" {
     }
   }
 
-  depends_on = [
-    aws_cloudwatch_log_group.statcast_ingestion
-  ]
+  depends_on = [aws_cloudwatch_log_group.statcast_ingestion]
 
   tags = var.tags
 }
 
-# By-player Lambda function (container: bronze_to_silver_features)
-resource "aws_lambda_function" "statcast_by_player" {
-  function_name = "${var.name_prefix}-statcast-by-player"
-  role          = aws_iam_role.statcast_by_player.arn
+# Silver feature build Lambda (container: bronze_to_silver_features)
+# Build: docker build --platform linux/amd64 --provenance=false -f docker/silver/lambda/Dockerfile -t <ecr_url>:<tag> .
+resource "aws_lambda_function" "silver_feature_build" {
+  function_name = "${var.name_prefix}-silver-feature-build"
+  role          = aws_iam_role.silver_feature_build.arn
   package_type  = "Image"
-  image_uri     = "${aws_ecr_repository.statcast_by_player.repository_url}:${var.by_player_image_tag}"
+  image_uri     = "${aws_ecr_repository.silver_feature_build.repository_url}:${var.silver_image_tag}"
 
-  memory_size = var.by_player_memory_size
-  timeout     = var.by_player_timeout
+  memory_size = var.silver_memory_size
+  timeout     = var.silver_timeout
 
   environment {
     variables = {
@@ -198,14 +266,36 @@ resource "aws_lambda_function" "statcast_by_player" {
     }
   }
 
-  depends_on = [
-    aws_cloudwatch_log_group.statcast_by_player
-  ]
+  depends_on = [aws_cloudwatch_log_group.silver_feature_build]
 
   tags = var.tags
 }
 
-# EventBridge rule to run daily
+# Gold preprocessing Lambda (container: silver_to_gold_preprocessing)
+# Build: docker build --platform linux/amd64 --provenance=false -f docker/gold/lambda/Dockerfile -t <ecr_url>:<tag> .
+resource "aws_lambda_function" "gold_preprocessing" {
+  function_name = "${var.name_prefix}-gold-preprocessing"
+  role          = aws_iam_role.gold_preprocessing.arn
+  package_type  = "Image"
+  image_uri     = "${aws_ecr_repository.gold_preprocessing.repository_url}:${var.gold_image_tag}"
+
+  memory_size = var.gold_memory_size
+  timeout     = var.gold_timeout
+
+  environment {
+    variables = {
+      S3_BUCKET     = var.data_lake_bucket_name
+      SILVER_PREFIX = var.silver_s3_prefix
+      GOLD_PREFIX   = var.gold_s3_prefix
+    }
+  }
+
+  depends_on = [aws_cloudwatch_log_group.gold_preprocessing]
+
+  tags = var.tags
+}
+
+# EventBridge rule for bronze ingestion (daily)
 resource "aws_cloudwatch_event_rule" "statcast_ingestion" {
   name                = "${var.name_prefix}-statcast-ingestion-schedule"
   description         = "Trigger bronze Statcast pitch ingestion (daily: yesterday UTC)"
@@ -213,15 +303,13 @@ resource "aws_cloudwatch_event_rule" "statcast_ingestion" {
   tags                = var.tags
 }
 
-# Target the Lambda
 resource "aws_cloudwatch_event_target" "statcast_ingestion" {
   rule      = aws_cloudwatch_event_rule.statcast_ingestion.name
   target_id = "StatcastIngestionLambda"
   arn       = aws_lambda_function.statcast_ingestion.arn
 }
 
-# Allow EventBridge to invoke the Lambda
-resource "aws_lambda_permission" "eventbridge" {
+resource "aws_lambda_permission" "statcast_ingestion_eventbridge" {
   statement_id  = "AllowExecutionFromEventBridge"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.statcast_ingestion.function_name
@@ -229,26 +317,46 @@ resource "aws_lambda_permission" "eventbridge" {
   source_arn    = aws_cloudwatch_event_rule.statcast_ingestion.arn
 }
 
-# EventBridge rule to run by-player build daily (optionally offset in time)
-resource "aws_cloudwatch_event_rule" "statcast_by_player" {
-  name                = "${var.name_prefix}-statcast-by-player-schedule"
-  description         = "Trigger silver feature build (daily: YTD bronze to silver)"
-  schedule_expression = var.by_player_schedule_expression
+# EventBridge rule for silver feature build (daily, offset after bronze)
+resource "aws_cloudwatch_event_rule" "silver_feature_build" {
+  name                = "${var.name_prefix}-silver-feature-build-schedule"
+  description         = "Trigger silver feature build (daily: YTD bronze to silver player-year features)"
+  schedule_expression = var.silver_schedule_expression
   tags                = var.tags
 }
 
-# Target the by-player Lambda
-resource "aws_cloudwatch_event_target" "statcast_by_player" {
-  rule      = aws_cloudwatch_event_rule.statcast_by_player.name
-  target_id = "StatcastByPlayerLambda"
-  arn       = aws_lambda_function.statcast_by_player.arn
+resource "aws_cloudwatch_event_target" "silver_feature_build" {
+  rule      = aws_cloudwatch_event_rule.silver_feature_build.name
+  target_id = "SilverFeatureBuildLambda"
+  arn       = aws_lambda_function.silver_feature_build.arn
 }
 
-# Allow EventBridge to invoke the by-player Lambda
-resource "aws_lambda_permission" "by_player_eventbridge" {
-  statement_id  = "AllowExecutionFromEventBridgeByPlayer"
+resource "aws_lambda_permission" "silver_feature_build_eventbridge" {
+  statement_id  = "AllowExecutionFromEventBridgeSilver"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.statcast_by_player.function_name
+  function_name = aws_lambda_function.silver_feature_build.function_name
   principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.statcast_by_player.arn
+  source_arn    = aws_cloudwatch_event_rule.silver_feature_build.arn
+}
+
+# EventBridge rule for gold preprocessing (daily, offset after silver)
+resource "aws_cloudwatch_event_rule" "gold_preprocessing" {
+  name                = "${var.name_prefix}-gold-preprocessing-schedule"
+  description         = "Trigger gold preprocessing (daily: silver to gold ML-ready features)"
+  schedule_expression = var.gold_schedule_expression
+  tags                = var.tags
+}
+
+resource "aws_cloudwatch_event_target" "gold_preprocessing" {
+  rule      = aws_cloudwatch_event_rule.gold_preprocessing.name
+  target_id = "GoldPreprocessingLambda"
+  arn       = aws_lambda_function.gold_preprocessing.arn
+}
+
+resource "aws_lambda_permission" "gold_preprocessing_eventbridge" {
+  statement_id  = "AllowExecutionFromEventBridgeGold"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.gold_preprocessing.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.gold_preprocessing.arn
 }
