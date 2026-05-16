@@ -11,7 +11,7 @@ then start Vite — `/api/*` is proxied through.
 
 ```powershell
 # Terminal 1 (from repo root):
-pip install -e ".[web]"
+pip install -e ".[dev]"
 $env:WEBAPP_DATA_DIR = "<path-to-local-parquet-bundle>"   # or set S3_BUCKET + AWS creds
 diamond-dna-api    # serves on http://127.0.0.1:5001
 

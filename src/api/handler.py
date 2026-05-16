@@ -11,7 +11,7 @@ import json
 import logging
 from typing import Any, Dict, Optional, Tuple
 
-from ..webapp.data_loader import (
+from .data_loader import (
     LakeTables,
     clusters_payload,
     load_lake_tables,
