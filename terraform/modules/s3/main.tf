@@ -1,4 +1,4 @@
-# S3 Bucket for Data Lake (Raw Data)
+# S3 Bucket for Data Lake
 resource "aws_s3_bucket" "data_lake" {
   bucket = var.data_lake_bucket_name
 
