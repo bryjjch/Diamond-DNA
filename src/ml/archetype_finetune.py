@@ -12,7 +12,7 @@ from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.metrics import davies_bouldin_score, silhouette_score
 from sklearn.mixture import GaussianMixture
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import RobustScaler
 
 from .archetype_clustering import (
     numeric_feature_columns,
@@ -20,20 +20,16 @@ from .archetype_clustering import (
 )
 
 
-def scaled_feature_matrix(df: pd.DataFrame) -> Tuple[np.ndarray, List[str], StandardScaler]:
-    """Same indexing and feature columns as ``fit_archetype_clustering``."""
-    # Prepare the dataframe for archetype clustering.
+def scaled_feature_matrix(df: pd.DataFrame) -> Tuple[np.ndarray, List[str], RobustScaler]:
+    """Same indexing, feature columns, and scaler as ``fit_archetype_clustering``."""
     df_i = prepare_dataframe_for_archetype_clustering(df)
-    # Get the numeric feature columns.
     cols = numeric_feature_columns(df_i)
     if not cols:
         raise ValueError("No numeric feature columns.")
     X = df_i[cols].to_numpy(dtype=np.float64, copy=True)
     if np.isnan(X).any():
         raise ValueError("NaN in feature matrix.")
-    # Fit the scaler.
-    scaler = StandardScaler()
-    # Transform the features to scaled space.
+    scaler = RobustScaler()
     X_scaled = scaler.fit_transform(X)
     return X_scaled, cols, scaler
 

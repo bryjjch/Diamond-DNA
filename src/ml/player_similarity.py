@@ -262,7 +262,7 @@ def build_gold_player_similarity(
             "role_years_processed": [],
         }
 
-    valid_roles = ("batter", "pitcher", "all")
+    valid_roles = ("batter", "pitcher", "catcher", "all")
     if role_filter not in valid_roles:
         return {
             "status": "error",
@@ -272,7 +272,9 @@ def build_gold_player_similarity(
             "role_years_processed": [],
         }
 
-    roles: Sequence[str] = ("batter", "pitcher") if role_filter == "all" else (role_filter,)
+    roles: Sequence[str] = (
+        ("batter", "pitcher", "catcher") if role_filter == "all" else (role_filter,)
+    )
 
     # Initialize the counters.
     rows_written = 0

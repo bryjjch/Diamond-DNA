@@ -13,6 +13,29 @@ from .runtime import (
 from .settings import PipelineSettings
 
 
+def _parse_optional_int(raw: str) -> Optional[int]:
+    s = str(raw).strip() if raw is not None else ""
+    return int(s) if s else None
+
+
+def _parse_optional_float(raw: str) -> Optional[float]:
+    s = str(raw).strip() if raw is not None else ""
+    return float(s) if s else None
+
+
+def _parse_optional_bic_range(raw: str) -> Optional[tuple[int, int]]:
+    s = str(raw).strip() if raw is not None else ""
+    if not s:
+        return None
+    if ":" not in s:
+        raise ValueError(f"BIC_K_RANGE must be 'k_min:k_max'; got {raw!r}.")
+    lo_s, hi_s = s.split(":", 1)
+    try:
+        return int(lo_s), int(hi_s)
+    except ValueError as exc:
+        raise ValueError(f"BIC_K_RANGE values must be integers; got {raw!r}.") from exc
+
+
 def gold_archetype_clustering_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     from ..ml.archetype_clustering import (
         ArchetypeClusteringConfig,
@@ -40,19 +63,6 @@ def gold_archetype_clustering_handler(event: Dict[str, Any], context: Any) -> Di
     gold_prefix = event_or_env_str(event, "gold_prefix", "GOLD_PREFIX", cfg.gold_prefix)
     role = event_or_env_str(event, "role", "ROLE", "all")
 
-    pca_n_raw = str(event_or_env_str(event, "pca_n_components", "PCA_N_COMPONENTS", "")).strip()
-    n_clusters_raw = str(
-        event_or_env_str(event, "n_clusters", "N_CLUSTERS", "")
-    ).strip()
-    try:
-        base_pca = int(pca_n_raw) if pca_n_raw else None
-        base_k = int(n_clusters_raw) if n_clusters_raw else None
-    except ValueError:
-        return {
-            "statusCode": 400,
-            "body": "PCA_N_COMPONENTS and N_CLUSTERS must be integers when set.",
-            "details": {},
-        }
     rs_raw = event_or_env_str(event, "random_state", "RANDOM_STATE", "42")
     n_init_raw = event_or_env_str(event, "n_init", "N_INIT", "10")
     cov_raw = str(
@@ -62,95 +72,106 @@ def gold_archetype_clustering_handler(event: Dict[str, Any], context: Any) -> Di
     if err:
         return err
 
-    p_pca_s = str(
-        event_or_env_str(event, "pitcher_pca_n_components", "PITCHER_PCA_N_COMPONENTS", "")
-    ).strip()
-    p_k_s = str(
-        event_or_env_str(event, "pitcher_n_clusters", "PITCHER_N_CLUSTERS", "")
-    ).strip()
-    p_cov_s = str(
-        event_or_env_str(
-            event, "pitcher_gmm_covariance_type", "PITCHER_GMM_COVARIANCE_TYPE", ""
-        )
-    ).strip()
-    b_pca_s = str(
-        event_or_env_str(event, "batter_pca_n_components", "BATTER_PCA_N_COMPONENTS", "")
-    ).strip()
-    b_k_s = str(event_or_env_str(event, "batter_n_clusters", "BATTER_N_CLUSTERS", "")).strip()
-    b_cov_s = str(
-        event_or_env_str(
-            event, "batter_gmm_covariance_type", "BATTER_GMM_COVARIANCE_TYPE", ""
-        )
-    ).strip()
-
-    p_cov = p_cov_s if p_cov_s else cov_raw
-    b_cov = b_cov_s if b_cov_s else cov_raw
-    err = _validate_cov("PITCHER_GMM_COVARIANCE_TYPE", p_cov)
-    if err:
-        return err
-    err = _validate_cov("BATTER_GMM_COVARIANCE_TYPE", b_cov)
-    if err:
-        return err
-
     try:
-        p_pca = int(p_pca_s) if p_pca_s else base_pca
-        p_k = int(p_k_s) if p_k_s else base_k
-        b_pca = int(b_pca_s) if b_pca_s else base_pca
-        b_k = int(b_k_s) if b_k_s else base_k
-    except ValueError:
-        return {
-            "statusCode": 400,
-            "body": "Pitcher/batter PCA and N_CLUSTERS overrides must be integers when set.",
-            "details": {},
-        }
+        base_pca = _parse_optional_int(
+            event_or_env_str(event, "pca_n_components", "PCA_N_COMPONENTS", "")
+        )
+        base_var = _parse_optional_float(
+            event_or_env_str(event, "pca_variance_target", "PCA_VARIANCE_TARGET", "")
+        )
+        base_k = _parse_optional_int(
+            event_or_env_str(event, "n_clusters", "N_CLUSTERS", "")
+        )
+        base_bic = _parse_optional_bic_range(
+            event_or_env_str(event, "bic_k_range", "BIC_K_RANGE", "")
+        )
+    except ValueError as exc:
+        return {"statusCode": 400, "body": str(exc), "details": {}}
 
-    if role in ("pitcher", "all") and (p_pca is None or p_k is None):
-        return {
-            "statusCode": 400,
-            "body": (
-                "Pitcher PCA and cluster count required: set PITCHER_PCA_N_COMPONENTS and "
-                "PITCHER_N_CLUSTERS, or PCA_N_COMPONENTS and N_CLUSTERS as defaults."
-            ),
-            "details": {},
-        }
-    if role in ("batter", "all") and (b_pca is None or b_k is None):
-        return {
-            "statusCode": 400,
-            "body": (
-                "Batter PCA and cluster count required: set BATTER_PCA_N_COMPONENTS and "
-                "BATTER_N_CLUSTERS, or PCA_N_COMPONENTS and N_CLUSTERS as defaults."
-            ),
-            "details": {},
-        }
-
-    pitcher_cfg = ArchetypeClusteringConfig(
-        pca_n_components=p_pca,
-        n_clusters=p_k,
-        random_state=int(rs_raw),
-        n_init=int(n_init_raw),
-        covariance_type=p_cov,
-    )
-    batter_cfg = ArchetypeClusteringConfig(
-        pca_n_components=b_pca,
-        n_clusters=b_k,
-        random_state=int(rs_raw),
-        n_init=int(n_init_raw),
-        covariance_type=b_cov,
-    )
-
-    if role == "pitcher":
-        build_kw: Dict[str, Any] = {"config": pitcher_cfg}
-    elif role == "batter":
-        build_kw = {"config": batter_cfg}
-    elif pitcher_cfg == batter_cfg:
-        build_kw = {"config": pitcher_cfg}
-    else:
-        build_kw = {
-            "configs_by_role": ArchetypeClusteringConfigsByRole(
-                pitcher=pitcher_cfg,
-                batter=batter_cfg,
+    role_configs: Dict[str, ArchetypeClusteringConfig] = {}
+    for r in ("pitcher", "batter", "catcher"):
+        r_upper = r.upper()
+        try:
+            r_pca = _parse_optional_int(
+                event_or_env_str(event, f"{r}_pca_n_components", f"{r_upper}_PCA_N_COMPONENTS", "")
             )
-        }
+            r_var = _parse_optional_float(
+                event_or_env_str(event, f"{r}_pca_variance_target", f"{r_upper}_PCA_VARIANCE_TARGET", "")
+            )
+            r_k = _parse_optional_int(
+                event_or_env_str(event, f"{r}_n_clusters", f"{r_upper}_N_CLUSTERS", "")
+            )
+            r_bic = _parse_optional_bic_range(
+                event_or_env_str(event, f"{r}_bic_k_range", f"{r_upper}_BIC_K_RANGE", "")
+            )
+        except ValueError as exc:
+            return {"statusCode": 400, "body": f"{r}: {exc}", "details": {}}
+        r_cov = str(
+            event_or_env_str(
+                event,
+                f"{r}_gmm_covariance_type",
+                f"{r_upper}_GMM_COVARIANCE_TYPE",
+                "",
+            )
+        ).strip() or cov_raw
+        err = _validate_cov(f"{r_upper}_GMM_COVARIANCE_TYPE", r_cov)
+        if err:
+            return err
+
+        pca_n = r_pca if (r_pca is not None or r_var is not None) else base_pca
+        pca_var = r_var if (r_pca is not None or r_var is not None) else base_var
+        k_n = r_k if (r_k is not None or r_bic is not None) else base_k
+        k_bic = r_bic if (r_k is not None or r_bic is not None) else base_bic
+
+        if role in (r, "all"):
+            if (pca_n is None) == (pca_var is None):
+                return {
+                    "statusCode": 400,
+                    "body": (
+                        f"{r}: provide exactly one of PCA_N_COMPONENTS/PCA_VARIANCE_TARGET "
+                        f"(or the {r_upper}_ override)."
+                    ),
+                    "details": {},
+                }
+            if (k_n is None) == (k_bic is None):
+                return {
+                    "statusCode": 400,
+                    "body": (
+                        f"{r}: provide exactly one of N_CLUSTERS/BIC_K_RANGE "
+                        f"(or the {r_upper}_ override)."
+                    ),
+                    "details": {},
+                }
+            try:
+                role_configs[r] = ArchetypeClusteringConfig(
+                    pca_n_components=pca_n,
+                    pca_variance_target=pca_var,
+                    n_clusters=k_n,
+                    bic_k_range=k_bic,
+                    random_state=int(rs_raw),
+                    n_init=int(n_init_raw),
+                    covariance_type=r_cov,
+                )
+            except ValueError as exc:
+                return {"statusCode": 400, "body": f"{r}: {exc}", "details": {}}
+
+    if role in ("pitcher", "batter", "catcher"):
+        build_kw: Dict[str, Any] = {"config": role_configs[role]}
+    else:
+        # role == "all"
+        pitcher_cfg = role_configs["pitcher"]
+        batter_cfg = role_configs["batter"]
+        catcher_cfg = role_configs["catcher"]
+        if pitcher_cfg == batter_cfg == catcher_cfg:
+            build_kw = {"config": pitcher_cfg}
+        else:
+            build_kw = {
+                "configs_by_role": ArchetypeClusteringConfigsByRole(
+                    pitcher=pitcher_cfg,
+                    batter=batter_cfg,
+                    catcher=catcher_cfg,
+                )
+            }
 
     result = build_gold_archetype_clustering(
         bucket=bucket,

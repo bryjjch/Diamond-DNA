@@ -42,6 +42,20 @@ _DEFENCE_METRIC_KEYS: Tuple[str, ...] = (
     "def_drs_total",
 )
 
+# Map Statcast/MLB numeric position codes to short labels. Catcher (2) is sourced from
+# the catcher-specific framing/pop-time tables; OAA leaderboards exclude catchers.
+POSITION_CODE_TO_LABEL: Dict[int, str] = {
+    2: "C",
+    3: "1B",
+    4: "2B",
+    5: "3B",
+    6: "SS",
+    7: "LF",
+    8: "CF",
+    9: "RF",
+}
+UNKNOWN_POSITION = "UNK"
+
 
 def _empty_metrics() -> Dict[str, float]:
     """Return a dictionary with all defence metrics set to NaN."""
@@ -273,3 +287,80 @@ def merge_defence_into_row(
         return
     for k in _DEFENCE_METRIC_KEYS:
         row[k] = m.get(k, float("nan"))
+
+
+def load_primary_positions_by_player_year(
+    bucket: str,
+    raw_defence_prefix: str,
+    year: int,
+) -> Dict[int, str]:
+    """
+    Return ``player_id -> primary_position`` for batters in ``year``.
+
+    A player is classified as ``C`` when they appear in either the catcher framing or
+    catcher pop-time leaderboard (Savant publishes those only for catchers). Otherwise
+    the primary position is the OAA leaderboard position with the most attempts (or, if
+    attempts columns are absent, the most leaderboard rows). Players with no defensive
+    data fall through to ``UNKNOWN_POSITION`` so downstream code can decide how to handle
+    them (typically grouped with non-catcher batters).
+    """
+    positions: Dict[int, str] = {}
+
+    catcher_ids: set[int] = set()
+    for filename in (DEFENCE_CATCHER_FRAMING_PARQUET, DEFENCE_CATCHER_POPTIME_PARQUET):
+        key = raw_defence_dataset_key(raw_defence_prefix, year, filename)
+        df = read_parquet_from_s3(bucket, key, log_read=False, missing_key_log="none")
+        if df is None or df.empty:
+            continue
+        pid_c = _col_ci(df, "player_id", "entity_id", "id")
+        if not pid_c:
+            continue
+        pids = pd.to_numeric(df[pid_c], errors="coerce")
+        for pid in pids.dropna().unique():
+            try:
+                catcher_ids.add(int(pid))
+            except (TypeError, ValueError):
+                continue
+    for pid in catcher_ids:
+        positions[pid] = "C"
+
+    oaa_key = raw_defence_dataset_key(raw_defence_prefix, year, DEFENCE_OAA_PARQUET)
+    oaa_df = read_parquet_from_s3(bucket, oaa_key, log_read=False, missing_key_log="none")
+    if oaa_df is not None and not oaa_df.empty:
+        pid_c = _col_ci(oaa_df, "player_id")
+        pos_c = _col_ci(oaa_df, "oaa_leaderboard_position", "primary_pos", "position")
+        if pid_c and pos_c:
+            att_c = _col_ci(oaa_df, "attempts", "n_attempts", "n_opp")
+            tmp = oaa_df[[pid_c, pos_c]].copy()
+            tmp[pid_c] = pd.to_numeric(tmp[pid_c], errors="coerce")
+            tmp[pos_c] = pd.to_numeric(tmp[pos_c], errors="coerce")
+            tmp = tmp.dropna(subset=[pid_c, pos_c])
+            if att_c is not None:
+                tmp["_weight"] = pd.to_numeric(oaa_df[att_c], errors="coerce").fillna(0.0)
+            else:
+                tmp["_weight"] = 1.0
+            grouped = (
+                tmp.groupby([pid_c, pos_c])["_weight"].sum().reset_index()
+            )
+            # For each player, pick the position with the largest weight.
+            for pid, sub in grouped.groupby(pid_c):
+                try:
+                    pid_i = int(pid)
+                except (TypeError, ValueError):
+                    continue
+                if pid_i in positions:
+                    continue
+                best = sub.sort_values("_weight", ascending=False).iloc[0]
+                code = int(best[pos_c])
+                positions[pid_i] = POSITION_CODE_TO_LABEL.get(code, UNKNOWN_POSITION)
+
+    return positions
+
+
+def merge_primary_position_into_row(
+    row: Dict[str, object],
+    positions: Dict[int, str],
+) -> None:
+    """Mutates ``row`` with ``primary_position`` derived from defensive data (batters)."""
+    pid = int(row["player_id"])
+    row["primary_position"] = positions.get(pid, UNKNOWN_POSITION)

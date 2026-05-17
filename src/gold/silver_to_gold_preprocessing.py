@@ -7,7 +7,7 @@ import json
 import logging
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -23,7 +23,27 @@ from ..pipeline.s3_interaction import (
 
 logger = logging.getLogger(__name__)
 
-ID_COLUMNS = ("player_id", "year", "role", "player_name")
+ID_COLUMNS = ("player_id", "year", "role", "player_name", "primary_position")
+
+# Defensive feature columns that are catcher-specific. We drop these from the non-catcher
+# batter cohort so they don't contribute noise (they are filled with 0 for non-catchers,
+# which collapses to a constant after splitting and either gets pruned by NZV or, worse,
+# warps the scaler).
+CATCHER_ONLY_DEFENCE_COLUMNS: frozenset[str] = frozenset(
+    {
+        "def_pop_time_2b_sec",
+        "def_framing_runs",
+    }
+)
+# Defensive feature columns that are most informative for non-catcher batters. Catchers
+# rarely have meaningful outfield catch / arm-strength signals, so we drop these from the
+# catcher cohort for the same NZV/scaler reasons.
+NON_CATCHER_ONLY_DEFENCE_COLUMNS: frozenset[str] = frozenset(
+    {
+        "def_outfield_catch_completion_rate",
+        "def_arm_strength_max_mph",
+    }
+)
 
 # Pitch-type share columns dropped for archetype training (arsenal summarized by pitch_type_entropy).
 PITCH_TYPE_SHARE_CODES_EXCLUDED: frozenset[str] = frozenset(
@@ -107,6 +127,7 @@ class PreprocessingArtifacts:
     correlation_dropped_columns: List[Dict[str, str]] = field(default_factory=list)
     near_zero_variance_dropped_columns: List[str] = field(default_factory=list)
     archetype_training_dropped_columns: List[str] = field(default_factory=list)
+    role_irrelevant_dropped_columns: List[str] = field(default_factory=list)
     dropped_columns: Dict[str, List[str]] = field(default_factory=dict)
     correlation_threshold: float = 0.95
 
@@ -133,6 +154,21 @@ def _fill_missing_values(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
         # Fill object columns with "unknown".
         out[col] = out[col].fillna("unknown")
     return out, sorted(numeric_cols)
+
+
+def _drop_role_irrelevant_columns(
+    df: pd.DataFrame, *, role: str
+) -> Tuple[pd.DataFrame, List[str]]:
+    """Drop columns that are not informative for ``role``'s cohort."""
+    if role == "catcher":
+        to_drop = [c for c in df.columns if c in NON_CATCHER_ONLY_DEFENCE_COLUMNS]
+    elif role == "batter":
+        to_drop = [c for c in df.columns if c in CATCHER_ONLY_DEFENCE_COLUMNS]
+    else:
+        to_drop = []
+    if not to_drop:
+        return df, []
+    return df.drop(columns=sorted(to_drop)), sorted(to_drop)
 
 
 def _hard_drop(df: pd.DataFrame, hard_drop_columns: Iterable[str]) -> Tuple[pd.DataFrame, List[str]]:
@@ -234,6 +270,10 @@ def preprocess_role_year_df(
     out, numeric_filled = _fill_missing_values(out)
     # Drop columns that are always dropped.
     out, hard_dropped = _hard_drop(out, config.hard_drop_columns)
+    # Drop columns that are irrelevant for this cohort (e.g. catcher-only metrics on
+    # the non-catcher batter cohort). Done before correlation / NZV so those passes
+    # operate on the cohort's true distribution.
+    out, role_irrelevant_dropped = _drop_role_irrelevant_columns(out, role=role)
     # Drop correlated columns.
     out, corr_dropped, corr_reasons = _correlation_prune(out, threshold=config.correlation_threshold)
     # Drop columns with low variance.
@@ -268,8 +308,10 @@ def preprocess_role_year_df(
         correlation_dropped_columns=corr_reasons,
         near_zero_variance_dropped_columns=nzv_dropped,
         archetype_training_dropped_columns=archetype_dropped,
+        role_irrelevant_dropped_columns=role_irrelevant_dropped,
         dropped_columns={
             "hard_drop": hard_dropped,
+            "role_irrelevant_drop": role_irrelevant_dropped,
             "correlation_drop": corr_dropped,
             "near_zero_variance_drop": nzv_dropped,
             "archetype_training_drop": archetype_dropped,
@@ -301,6 +343,17 @@ def _write_metadata_json(bucket: str, key: str, artifacts: PreprocessingArtifact
     )
 
 
+def _split_batter_silver_by_position(
+    df: pd.DataFrame,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Split a batter silver frame into (non-catcher_batters, catchers) on ``primary_position``."""
+    if "primary_position" not in df.columns:
+        return df, df.iloc[0:0].copy()
+    pos = df["primary_position"].astype(str).str.upper().str.strip()
+    catcher_mask = pos == "C"
+    return df.loc[~catcher_mask].copy(), df.loc[catcher_mask].copy()
+
+
 def build_silver_to_gold_preprocessing(
     *,
     bucket: str,
@@ -312,7 +365,13 @@ def build_silver_to_gold_preprocessing(
     correlation_threshold: float = 0.95,
     near_zero_variance_unique_ratio: float = 0.005,
 ) -> Dict[str, object]:
-    """Read silver role/year tables and write preprocessed gold outputs + artifacts."""
+    """
+    Read silver role/year tables and write preprocessed gold outputs + artifacts.
+
+    The silver batter table is split on ``primary_position`` so catchers are preprocessed
+    and clustered as their own cohort; the remaining batters go to ``role=batter`` as
+    before. Pitchers are unaffected.
+    """
     # Check if start year is greater than end year.
     if start_year > end_year:
         return {
@@ -323,7 +382,7 @@ def build_silver_to_gold_preprocessing(
         }
 
     # Check if role filter is valid.
-    valid_roles = ("batter", "pitcher", "all")
+    valid_roles = ("batter", "pitcher", "catcher", "all")
     if role_filter not in valid_roles:
         return {
             "status": "error",
@@ -338,45 +397,70 @@ def build_silver_to_gold_preprocessing(
         near_zero_variance_unique_ratio=near_zero_variance_unique_ratio,
     )
 
-    # Create roles list.
-    roles = ("batter", "pitcher") if role_filter == "all" else (role_filter,)
-    # Initialize counters.
+    # Map each output role to the silver role it reads from. catcher and batter both
+    # come from silver/batter (split on primary_position); pitcher reads silver/pitcher.
+    if role_filter == "all":
+        output_roles = ("batter", "pitcher", "catcher")
+    else:
+        output_roles = (role_filter,)
+
     rows_written = 0
     years_written: set[int] = set()
     role_years_processed: List[Dict[str, int | str]] = []
 
-    # Process each role and year.
-    for role in roles:
+    # Cache silver-batter reads so we don't fetch the same parquet twice when both
+    # batter and catcher outputs are requested.
+    silver_batter_cache: Dict[int, Optional[pd.DataFrame]] = {}
+
+    for output_role in output_roles:
+        silver_role = "pitcher" if output_role == "pitcher" else "batter"
         for year in _year_range(start_year, end_year):
-            # Read the silver feature table.
-            in_key = feature_player_year_output_key(silver_prefix, role, year)
-            df = read_parquet_from_s3(bucket, in_key, missing_key_log="none")
+            in_key = feature_player_year_output_key(silver_prefix, silver_role, year)
+            if silver_role == "batter":
+                if year not in silver_batter_cache:
+                    silver_batter_cache[year] = read_parquet_from_s3(
+                        bucket, in_key, missing_key_log="none"
+                    )
+                df = silver_batter_cache[year]
+            else:
+                df = read_parquet_from_s3(bucket, in_key, missing_key_log="none")
             if df is None or df.empty:
                 continue
 
-            # Add role column if not present.
-            if "role" not in df.columns:
-                df = df.copy()
-                df["role"] = role
+            df = df.copy()
+            if silver_role == "batter":
+                non_catchers, catchers = _split_batter_silver_by_position(df)
+                df = catchers if output_role == "catcher" else non_catchers
+                if df.empty:
+                    logger.info(
+                        "No %s rows for year=%d after primary_position split.",
+                        output_role,
+                        year,
+                    )
+                    continue
+            # Stamp the output role on every row so downstream consumers (and gold
+            # metadata) reflect the post-split cohort rather than the silver source.
+            df["role"] = output_role
 
-            # Preprocess the role-year dataframe.
-            gold_df, artifacts = preprocess_role_year_df(df, role=role, year=year, config=cfg)
-            # Write the preprocessed dataframe to S3.
-            out_key = gold_player_year_output_key(gold_prefix, role, year)
+            # Preprocess the cohort-year dataframe.
+            gold_df, artifacts = preprocess_role_year_df(
+                df, role=output_role, year=year, config=cfg
+            )
+            out_key = gold_player_year_output_key(gold_prefix, output_role, year)
             write_parquet_to_s3(gold_df, bucket, out_key, log_write=False)
 
-            # Write the preprocessing artifacts to S3.
-            metadata_key = gold_preprocessing_metadata_key(gold_prefix, role, year)
+            metadata_key = gold_preprocessing_metadata_key(gold_prefix, output_role, year)
             _write_metadata_json(bucket, metadata_key, artifacts)
 
-            # Update counters.
             rows_written += len(gold_df)
             years_written.add(year)
-            role_years_processed.append({"role": role, "year": year, "rows": int(len(gold_df))})
+            role_years_processed.append(
+                {"role": output_role, "year": year, "rows": int(len(gold_df))}
+            )
             logger.info(
                 "Gold preprocessing wrote %d rows for role=%s year=%d to s3://%s/%s",
                 len(gold_df),
-                role,
+                output_role,
                 year,
                 bucket,
                 out_key,
@@ -386,7 +470,8 @@ def build_silver_to_gold_preprocessing(
         return {
             "status": "no_data",
             "message": (
-                f"No silver feature tables found for roles={roles} years={start_year}..{end_year}"
+                f"No silver feature tables found for roles={list(output_roles)} "
+                f"years={start_year}..{end_year}"
             ),
             "years_written": [],
             "rows_written": 0,
@@ -396,7 +481,7 @@ def build_silver_to_gold_preprocessing(
     sorted_years = sorted(years_written)
     message = (
         f"Silver->gold preprocessing wrote {rows_written} rows across years {sorted_years} "
-        f"for roles {list(roles)}"
+        f"for roles {list(output_roles)}"
     )
     return {
         "status": "ok",

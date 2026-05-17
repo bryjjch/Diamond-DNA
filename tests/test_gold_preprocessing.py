@@ -12,12 +12,15 @@ from src.gold.silver_to_gold_preprocessing import (
 
 
 def test_preprocess_role_year_df_imputes_sparse_columns_and_drops_pt():
-    # Enough rows/variety that correlation and NZV pruning do not drop catcher columns.
+    """
+    Catcher-only defensive columns (def_pop_time_2b_sec, def_framing_runs) are kept on
+    the catcher cohort and dropped from the non-catcher batter cohort.
+    """
     df = pd.DataFrame(
         {
             "player_id": [1, 2, 3, 4],
             "year": [2024, 2024, 2024, 2024],
-            "role": ["batter"] * 4,
+            "role": ["catcher"] * 4,
             "pt_FF_release_speed_mean": [np.nan, 93.5, 92.0, 94.0],
             "def_pop_time_2b_sec": [np.nan, 1.95, 2.0, 1.9],
             "def_framing_runs": [np.nan, 3.2, 2.0, 4.0],
@@ -27,7 +30,7 @@ def test_preprocess_role_year_df_imputes_sparse_columns_and_drops_pt():
     )
 
     out, artifacts = preprocess_role_year_df(
-        df, role="batter", year=2024, config=GoldPreprocessingConfig()
+        df, role="catcher", year=2024, config=GoldPreprocessingConfig()
     )
 
     assert "woba_value_mean" not in out.columns
@@ -41,6 +44,29 @@ def test_preprocess_role_year_df_imputes_sparse_columns_and_drops_pt():
         "pt_FF_release_speed_mean" in artifacts.archetype_training_dropped_columns
         or "pt_FF_release_speed_mean" in artifacts.dropped_columns.get("correlation_drop", [])
     )
+
+
+def test_preprocess_role_year_df_drops_catcher_only_columns_from_batters():
+    """Non-catcher batters should not carry def_pop_time_2b_sec or def_framing_runs."""
+    df = pd.DataFrame(
+        {
+            "player_id": [1, 2, 3, 4],
+            "year": [2024] * 4,
+            "role": ["batter"] * 4,
+            "def_pop_time_2b_sec": [np.nan, 1.95, 2.0, 1.9],
+            "def_framing_runs": [np.nan, 3.2, 2.0, 4.0],
+            "def_outfield_catch_completion_rate": [0.85, 0.9, 0.88, 0.82],
+            "estimated_woba_using_speedangle_mean": [0.31, 0.32, 0.33, 0.29],
+        }
+    )
+    out, artifacts = preprocess_role_year_df(
+        df, role="batter", year=2024, config=GoldPreprocessingConfig()
+    )
+    assert "def_pop_time_2b_sec" not in out.columns
+    assert "def_framing_runs" not in out.columns
+    assert "def_outfield_catch_completion_rate" in out.columns
+    assert "def_pop_time_2b_sec" in artifacts.role_irrelevant_dropped_columns
+    assert "def_framing_runs" in artifacts.role_irrelevant_dropped_columns
 
 
 def test_preprocess_role_year_df_drops_archetype_non_features():

@@ -18,7 +18,7 @@ from ..pipeline.s3_interaction import (
 )
 from ..pipeline.settings import PipelineSettings
 
-_ROLES = ("batter", "pitcher")
+_ROLES = ("batter", "pitcher", "catcher")
 
 
 @dataclass(frozen=True)
@@ -36,22 +36,34 @@ def _load_from_local_dir(data_dir: Path, year: int) -> Tuple[Optional[LakeTables
     """
     Expect files (produced by copying from the lake):
 
-    - archetypes_batter.parquet / archetypes_pitcher.parquet
-    - neighbors_batter.parquet / neighbors_pitcher.parquet
+    - archetypes_batter.parquet / archetypes_pitcher.parquet / archetypes_catcher.parquet
+    - neighbors_batter.parquet / neighbors_pitcher.parquet / neighbors_catcher.parquet
+
+    Catcher files are optional so the loader still works against snapshots produced before
+    the catcher cohort split. Batter and pitcher are required.
     """
-    paths_a = [data_dir / f"archetypes_{r}.parquet" for r in _ROLES]
-    paths_n = [data_dir / f"neighbors_{r}.parquet" for r in _ROLES]
-    if not all(p.is_file() for p in paths_a + paths_n):
+    required = ("batter", "pitcher")
+    missing_required = [
+        p.name
+        for r in required
+        for p in (data_dir / f"archetypes_{r}.parquet", data_dir / f"neighbors_{r}.parquet")
+        if not p.is_file()
+    ]
+    if missing_required:
         return None, (
-            f"WEBAPP_DATA_DIR={data_dir} must contain archetypes_batter.parquet, "
-            "archetypes_pitcher.parquet, neighbors_batter.parquet, neighbors_pitcher.parquet"
+            f"WEBAPP_DATA_DIR={data_dir} is missing required file(s): "
+            + ", ".join(missing_required)
         )
 
     a_frames: List[pd.DataFrame] = []
     n_frames: List[pd.DataFrame] = []
     for role in _ROLES:
-        adf = pd.read_parquet(data_dir / f"archetypes_{role}.parquet")
-        ndf = pd.read_parquet(data_dir / f"neighbors_{role}.parquet")
+        apath = data_dir / f"archetypes_{role}.parquet"
+        npath = data_dir / f"neighbors_{role}.parquet"
+        if not (apath.is_file() and npath.is_file()):
+            continue
+        adf = pd.read_parquet(apath)
+        ndf = pd.read_parquet(npath)
         if "role" not in adf.columns:
             adf = adf.copy()
             adf["role"] = role
