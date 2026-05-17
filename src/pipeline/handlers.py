@@ -30,7 +30,10 @@ def _parse_optional_bic_range(raw: str) -> Optional[tuple[int, int]]:
     if ":" not in s:
         raise ValueError(f"BIC_K_RANGE must be 'k_min:k_max'; got {raw!r}.")
     lo_s, hi_s = s.split(":", 1)
-    return int(lo_s), int(hi_s)
+    try:
+        return int(lo_s), int(hi_s)
+    except ValueError as exc:
+        raise ValueError(f"BIC_K_RANGE values must be integers; got {raw!r}.") from exc
 
 
 def gold_archetype_clustering_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
