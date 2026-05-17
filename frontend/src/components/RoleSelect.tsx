@@ -1,3 +1,4 @@
+import { SelectButton } from "primereact/selectbutton";
 import type { Role } from "@/lib/types";
 
 interface RoleSelectProps {
@@ -6,19 +7,32 @@ interface RoleSelectProps {
   label?: string;
 }
 
+const OPTIONS = [
+  { label: "Batters", value: "batter", icon: "pi pi-bullseye" },
+  { label: "Pitchers", value: "pitcher", icon: "pi pi-send" },
+] as const;
+
 export function RoleSelect({ value, onChange, label = "Role" }: RoleSelectProps) {
   return (
-    <label className="flex items-center gap-2 text-sm text-muted">
-      {label}
-      <select
-        aria-label={label}
+    <div className="flex flex-col gap-1">
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+        {label}
+      </span>
+      <SelectButton
         value={value}
-        onChange={(e) => onChange(e.target.value as Role)}
-        className="rounded-md border border-line bg-surface px-3 py-2 text-fg focus:outline-2 focus:outline-accent-dim"
-      >
-        <option value="batter">Batter</option>
-        <option value="pitcher">Pitcher</option>
-      </select>
-    </label>
+        onChange={(e) => {
+          if (e.value) onChange(e.value as Role);
+        }}
+        options={OPTIONS as unknown as { label: string; value: string }[]}
+        optionLabel="label"
+        itemTemplate={(opt: { label: string; icon: string }) => (
+          <span className="flex items-center gap-2">
+            <i className={opt.icon} />
+            {opt.label}
+          </span>
+        )}
+        allowEmpty={false}
+      />
+    </div>
   );
 }

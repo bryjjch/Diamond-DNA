@@ -1,17 +1,30 @@
 @import "tailwindcss";
 
-@theme {
-  --color-bg: #0f1419;
-  --color-surface: #1a2332;
-  --color-line: #2d3a4f;
-  --color-fg: #e7ecf3;
-  --color-muted: #8b9cb3;
-  --color-accent: #5b9fd4;
-  --color-accent-dim: #3d7ab0;
-  --color-danger-bg: #3a2020;
-  --color-danger-line: #8b4848;
+/* PrimeReact: theme, base, icons. Theme is the green-accented light Lara preset. */
+@import "primereact/resources/themes/lara-light-green/theme.css";
+@import "primereact/resources/primereact.min.css";
+@import "primeicons/primeicons.css";
 
-  --font-sans: "Segoe UI", system-ui, sans-serif;
+@theme {
+  --color-bg: #f5f7f9;
+  --color-surface: #ffffff;
+  --color-surface-alt: #f9fafb;
+  --color-line: #e5e7eb;
+  --color-line-strong: #d1d5db;
+  --color-fg: #111827;
+  --color-muted: #6b7280;
+  --color-subtle: #9ca3af;
+  --color-accent: #10b981;
+  --color-accent-hover: #059669;
+  --color-accent-soft: rgba(16, 185, 129, 0.12);
+  --color-accent-soft-strong: rgba(16, 185, 129, 0.2);
+  --color-danger-bg: #fef2f2;
+  --color-danger-line: #b91c1c;
+
+  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
+  --shadow-card-hover: 0 2px 6px rgba(15, 23, 42, 0.06), 0 6px 16px rgba(15, 23, 42, 0.08);
 }
 
 html,
@@ -23,6 +36,8 @@ body,
   color: var(--color-fg);
   font-family: var(--font-sans);
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 *,
@@ -31,8 +46,135 @@ body,
   box-sizing: border-box;
 }
 
-/* Subtle native scrollbars on dark surfaces */
 * {
-  scrollbar-color: var(--color-line) transparent;
+  scrollbar-color: var(--color-line-strong) transparent;
   scrollbar-width: thin;
+}
+
+/* ----- PrimeReact overrides: lock primary to our emerald shade ----- */
+:root {
+  --primary-color: #10b981;
+  --primary-color-text: #ffffff;
+  --highlight-bg: rgba(16, 185, 129, 0.12);
+  --highlight-text-color: #047857;
+  --focus-ring: 0 0 0 0.2rem rgba(16, 185, 129, 0.25);
+}
+
+.p-component {
+  font-family: var(--font-sans);
+}
+
+/* Card tweaks — flatter, dashboard-style */
+.p-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: 12px;
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 0.15s ease;
+}
+.p-card:hover {
+  box-shadow: var(--shadow-card-hover);
+}
+.p-card .p-card-body {
+  padding: 1.25rem;
+}
+.p-card .p-card-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+.p-card .p-card-subtitle {
+  font-size: 0.8125rem;
+  color: var(--color-muted);
+  margin-bottom: 0.75rem;
+}
+
+/* Inputs — pill border, focus ring in green */
+.p-inputtext {
+  border-radius: 8px;
+  border-color: var(--color-line);
+  background: var(--color-surface);
+}
+.p-inputtext:enabled:focus {
+  box-shadow: var(--focus-ring);
+  border-color: var(--color-accent);
+}
+
+/* Listbox + selectable list rows */
+.p-listbox {
+  border-radius: 10px;
+  border-color: var(--color-line);
+  background: var(--color-surface);
+}
+.p-listbox .p-listbox-item.p-highlight {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-hover);
+}
+.p-listbox .p-listbox-item:not(.p-highlight):not(.p-disabled):hover {
+  background: var(--color-surface-alt);
+}
+
+/* Accordion (cluster cards) */
+.p-accordion .p-accordion-header .p-accordion-header-link {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+  color: var(--color-fg);
+  padding: 0.75rem 1rem;
+  font-weight: 500;
+}
+.p-accordion .p-accordion-header:not(.p-disabled).p-highlight .p-accordion-header-link {
+  background: var(--color-accent-soft);
+  border-color: rgba(16, 185, 129, 0.35);
+  color: var(--color-accent-hover);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.p-accordion .p-accordion-content {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-top: 0;
+  border-bottom-left-radius: 10px;
+  border-bottom-right-radius: 10px;
+  padding: 0.5rem 0.75rem;
+}
+.p-accordion .p-accordion-tab {
+  margin-bottom: 0.5rem;
+}
+
+/* Dropdown */
+.p-dropdown {
+  border-radius: 8px;
+  border-color: var(--color-line);
+  background: var(--color-surface);
+}
+.p-dropdown:not(.p-disabled).p-focus {
+  box-shadow: var(--focus-ring);
+  border-color: var(--color-accent);
+}
+
+/* Tag */
+.p-tag {
+  border-radius: 6px;
+  font-weight: 500;
+  font-size: 0.6875rem;
+  letter-spacing: 0.02em;
+}
+
+/* Buttons — subtle, dashboard-ish */
+.p-button {
+  border-radius: 8px;
+  font-weight: 500;
+}
+.p-button.p-button-text {
+  color: var(--color-fg);
+}
+.p-button.p-button-text:enabled:hover {
+  background: var(--color-surface-alt);
+  color: var(--color-fg);
+}
+
+/* Message */
+.p-message {
+  border-radius: 10px;
 }
