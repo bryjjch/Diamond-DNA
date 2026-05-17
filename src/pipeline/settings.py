@@ -25,7 +25,7 @@ class PipelineSettings:
     @classmethod
     def from_environ(cls, environ: Optional[Mapping[str, str]] = None) -> PipelineSettings:
         e = dict(environ or os.environ)
-        bucket = e.get("S3_BUCKET", "diamond-dna")
+        bucket = e.get("S3_BUCKET", "diamond-dna-data-lake")
         raw = _strip_prefix(e.get("S3_PREFIX") or e.get("RAW_PREFIX") or "bronze/statcast")
         return cls(
             s3_bucket=bucket,
