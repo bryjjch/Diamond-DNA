@@ -5,24 +5,27 @@ viewer. Built with Vite, Tailwind v4, TanStack Query, and React Router.
 
 ## Local development
 
-The dev server expects the API to be reachable. Run the Python Lambda shim
-([../src/api/local_server.py](../src/api/local_server.py)) on `:5001` first,
-then start Vite — `/api/*` is proxied through.
+By default the dev server proxies `/api/*` to the deployed API Gateway, so no
+local backend is required:
 
 ```powershell
-# Terminal 1 (from repo root):
-pip install -e ".[dev]"
-$env:WEBAPP_DATA_DIR = "<path-to-local-parquet-bundle>"   # or set S3_BUCKET + AWS creds
-diamond-dna-api    # serves on http://127.0.0.1:5001
-
-# Terminal 2:
 cd frontend
 npm install        # first time only
 npm run dev        # http://127.0.0.1:5173
 ```
 
-Override the proxy target via `VITE_DEV_API_PROXY` (e.g. point at a deployed
-API Gateway endpoint) when you want to run the SPA against real AWS data.
+The proxy target is configured in [vite.config.ts](vite.config.ts) and can be
+overridden via `VITE_DEV_API_PROXY` — point it at the Python Lambda shim
+([../src/api/local_server.py](../src/api/local_server.py)) on
+`http://127.0.0.1:5001` if you want to develop against a local API:
+
+```powershell
+# Optional — only if you want a local API instead of the deployed one
+$env:WEBAPP_DATA_DIR = "<path-to-local-parquet-bundle>"   # or set S3_BUCKET + AWS creds
+diamond-dna-api    # serves on http://127.0.0.1:5001
+$env:VITE_DEV_API_PROXY = "http://127.0.0.1:5001"
+npm run dev
+```
 
 ## Production (Vercel)
 
@@ -48,9 +51,9 @@ API Gateway endpoint) when you want to run the SPA against real AWS data.
 
 ```
 src/
-  components/    # Header, Tabs, SearchInput, RoleSelect, ErrorBanner
+  components/    # AppShell, Sidebar, Topbar, SearchInput, RoleSelect, ErrorBanner
   pages/         # ClusterBrowser, SimilarPlayers
   lib/           # api client, types, queryClient, utils
   App.tsx        # routes
-  main.tsx       # mount + providers
+  main.tsx       # mount + providers (PrimeReact, React Query, Router)
 ```
