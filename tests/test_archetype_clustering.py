@@ -48,8 +48,22 @@ def test_archetype_cluster_label_mappings():
     assert ARCHETYPE_CLUSTER_LABELS_PITCHER[5] == "The High-Leverage Power Reliever"
     assert archetype_cluster_label("batter", 3) == "The Contact Hitter"
     assert archetype_cluster_label("pitcher", 4) == "The Groundball Specialist"
+    assert archetype_cluster_label("catcher", 0) == "The Defensive Anchor"
     assert archetype_cluster_label("batter", 99) == "Cluster 99"
     assert archetype_cluster_label("unknown_role", 0) == "Cluster 0"
+
+
+def test_archetype_clustering_config_validates_mutex():
+    import pytest
+
+    with pytest.raises(ValueError, match="exactly one of pca"):
+        ArchetypeClusteringConfig(pca_n_components=3, pca_variance_target=0.9, n_clusters=4)
+    with pytest.raises(ValueError, match="exactly one of pca"):
+        ArchetypeClusteringConfig(n_clusters=4)
+    with pytest.raises(ValueError, match="exactly one of n_clusters"):
+        ArchetypeClusteringConfig(pca_n_components=3)
+    with pytest.raises(ValueError, match="exactly one of n_clusters"):
+        ArchetypeClusteringConfig(pca_n_components=3, n_clusters=4, bic_k_range=(2, 8))
 
 
 def test_numeric_feature_columns_does_not_filter_gold_dropped_columns():
@@ -122,8 +136,78 @@ def test_fit_archetype_clustering_fixed_pca_and_k():
     assert bundle["n_clusters"] == 4
     assert bundle["gmm"].n_components == 4
     assert meta["clustering_method"] == "gaussian_mixture"
+    assert meta["scaler"] == "RobustScaler"
+    assert meta["pca_mode"] == "fixed"
+    assert meta["n_clusters_mode"] == "fixed"
     assert "gmm_bic" in meta
     assert "silhouette_score" in meta
+
+
+def test_fit_archetype_clustering_variance_target_pca():
+    """pca_variance_target trims to the smallest n_components hitting the target."""
+    X, _ = make_blobs(
+        n_samples=200,
+        centers=4,
+        n_features=8,
+        random_state=11,
+        cluster_std=0.7,
+    )
+    df = pd.DataFrame(X, columns=[f"f{i}" for i in range(8)])
+    df.insert(0, "player_id", np.arange(200))
+    df.insert(1, "player_name", [f"P, {i}" for i in range(200)])
+    df.insert(2, "year", 2024)
+    df.insert(3, "role", "batter")
+    df.insert(4, "n_pitches_total", np.arange(500, 700))
+
+    cfg = ArchetypeClusteringConfig(
+        pca_variance_target=0.9,
+        n_clusters=4,
+        random_state=11,
+        n_init=5,
+    )
+    _out, meta, bundle = fit_archetype_clustering(df, role="batter", year=2024, config=cfg)
+
+    assert meta["pca_mode"] == "variance_target"
+    assert meta["pca_total_explained_variance"] >= 0.9
+    # Lowering by one component would drop us below the target.
+    if meta["pca_n_components"] > 1:
+        cum = float(sum(meta["pca_explained_variance_ratio"][:-1]))
+        assert cum < 0.9
+    assert bundle["pca"].n_components_ == meta["pca_n_components"]
+
+
+def test_fit_archetype_clustering_bic_selected_k():
+    """bic_k_range sweeps the range and picks the k with the lowest BIC."""
+    X, _ = make_blobs(
+        n_samples=240,
+        centers=3,
+        n_features=5,
+        random_state=23,
+        cluster_std=0.5,
+    )
+    df = pd.DataFrame(X, columns=[f"f{i}" for i in range(5)])
+    df.insert(0, "player_id", np.arange(240))
+    df.insert(1, "player_name", [f"P, {i}" for i in range(240)])
+    df.insert(2, "year", 2024)
+    df.insert(3, "role", "pitcher")
+    df.insert(4, "n_pitches_total", np.arange(1000, 1240))
+
+    cfg = ArchetypeClusteringConfig(
+        pca_n_components=4,
+        bic_k_range=(2, 6),
+        random_state=23,
+        n_init=4,
+    )
+    _out, meta, bundle = fit_archetype_clustering(df, role="pitcher", year=2024, config=cfg)
+
+    assert meta["n_clusters_mode"] == "bic_selected"
+    assert 2 <= meta["n_clusters"] <= 6
+    sweep = meta["bic_sweep"]
+    assert sweep is not None and len(sweep) == 5
+    best_bic = min(row["bic"] for row in sweep)
+    chosen = next(row for row in sweep if int(row["k"]) == meta["n_clusters"])
+    assert chosen["bic"] == best_bic
+    assert bundle["gmm"].n_components == meta["n_clusters"]
 
 
 def test_fit_archetype_clustering_raises_on_too_few_rows():
