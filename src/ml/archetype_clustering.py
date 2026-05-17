@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gold player-year archetype clustering: StandardScaler → PCA → Gaussian Mixture."""
+"""Gold player-year archetype clustering: RobustScaler → PCA → Gaussian Mixture."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import json
 import logging
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import joblib
 import numpy as np
@@ -18,7 +18,7 @@ import sklearn
 from sklearn.decomposition import PCA
 from sklearn.mixture import GaussianMixture
 from sklearn.metrics import davies_bouldin_score, silhouette_score
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import RobustScaler
 
 from ..gold.silver_to_gold_preprocessing import ID_COLUMNS
 from ..pipeline.s3_interaction import (
@@ -61,10 +61,19 @@ ARCHETYPE_CLUSTER_LABELS_PITCHER: Dict[int, str] = {
     4: "The Groundball Specialist",
     5: "The High-Leverage Power Reliever",
 }
+ARCHETYPE_CLUSTER_LABELS_CATCHER: Dict[int, str] = {
+    0: "The Defensive Anchor",
+    1: "The Pitch Framer",
+    2: "The Power-Hitting Catcher",
+    3: "The Contact Backstop",
+}
 ARCHETYPE_CLUSTER_LABELS_BY_ROLE: Dict[str, Dict[int, str]] = {
     "batter": ARCHETYPE_CLUSTER_LABELS_BATTER,
     "pitcher": ARCHETYPE_CLUSTER_LABELS_PITCHER,
+    "catcher": ARCHETYPE_CLUSTER_LABELS_CATCHER,
 }
+
+VALID_ROLES: Tuple[str, ...] = ("batter", "pitcher", "catcher")
 
 
 def archetype_cluster_label(role: str, cluster_id: int) -> str:
@@ -102,21 +111,71 @@ _VALID_GMM_COVARIANCE = frozenset(GMM_COVARIANCE_TYPES)
 
 @dataclass(frozen=True)
 class ArchetypeClusteringConfig:
-    """Hyperparameters for one (role, year) archetype run (PCA + GaussianMixture)."""
+    """
+    Hyperparameters for one (role, year) archetype run (PCA + GaussianMixture).
 
-    pca_n_components: int
-    n_clusters: int
+    PCA dimensionality is set in one of two ways:
+      - ``pca_n_components`` (int): use exactly this many components.
+      - ``pca_variance_target`` (float in (0, 1]): keep the smallest number of
+        components whose cumulative explained variance ratio reaches this target.
+    Exactly one of these must be provided.
+
+    Cluster count is set in one of two ways:
+      - ``n_clusters`` (int): fit GMM with exactly this number of components.
+      - ``bic_k_range`` (Tuple[int, int]): sweep ``[k_min, k_max]`` inclusive and pick
+        the k that minimizes BIC on the PCA-transformed features.
+    Exactly one of these must be provided.
+    """
+
+    pca_n_components: Optional[int] = None
+    n_clusters: Optional[int] = None
+    pca_variance_target: Optional[float] = None
+    bic_k_range: Optional[Tuple[int, int]] = None
     random_state: int = 42
     n_init: int = 10
     covariance_type: str = "full"
 
+    def __post_init__(self) -> None:
+        # Validate exactly-one-of for PCA dimensionality.
+        if (self.pca_n_components is None) == (self.pca_variance_target is None):
+            raise ValueError(
+                "ArchetypeClusteringConfig requires exactly one of pca_n_components or "
+                "pca_variance_target."
+            )
+        if self.pca_variance_target is not None and not (0.0 < self.pca_variance_target <= 1.0):
+            raise ValueError(
+                f"pca_variance_target must be in (0, 1]; got {self.pca_variance_target!r}."
+            )
+        if self.pca_n_components is not None and self.pca_n_components < 1:
+            raise ValueError(f"pca_n_components must be >= 1; got {self.pca_n_components!r}.")
+        # Validate exactly-one-of for cluster count.
+        if (self.n_clusters is None) == (self.bic_k_range is None):
+            raise ValueError(
+                "ArchetypeClusteringConfig requires exactly one of n_clusters or bic_k_range."
+            )
+        if self.n_clusters is not None and self.n_clusters < 2:
+            raise ValueError(f"n_clusters must be >= 2; got {self.n_clusters!r}.")
+        if self.bic_k_range is not None:
+            k_lo, k_hi = self.bic_k_range
+            if k_lo < 2 or k_hi < k_lo:
+                raise ValueError(
+                    f"bic_k_range must satisfy 2 <= k_min <= k_max; got {self.bic_k_range!r}."
+                )
+
 
 @dataclass(frozen=True)
 class ArchetypeClusteringConfigsByRole:
-    """Separate clustering hyperparameters for pitchers vs batters (used when ``role_filter`` is ``all``)."""
+    """
+    Separate clustering hyperparameters per role.
+
+    Used when ``role_filter`` is ``all``. ``catcher`` is optional so existing two-role
+    callers (pitcher + batter only) continue to work; if catcher rows are present but
+    no catcher config is provided, the batter config is reused as a sensible fallback.
+    """
 
     pitcher: ArchetypeClusteringConfig
     batter: ArchetypeClusteringConfig
+    catcher: Optional[ArchetypeClusteringConfig] = None
 
 
 def _config_for_role(
@@ -126,15 +185,17 @@ def _config_for_role(
     configs_by_role: Optional[ArchetypeClusteringConfigsByRole],
 ) -> ArchetypeClusteringConfig:
     """Get the clustering configuration for a role."""
-    if role not in ("pitcher", "batter"):
-        raise ValueError(f"role must be 'pitcher' or 'batter'; got {role!r}")
+    if role not in VALID_ROLES:
+        raise ValueError(f"role must be one of {VALID_ROLES}; got {role!r}")
     if configs_by_role is not None:
-        # Return the clustering configuration for the role.
-        return configs_by_role.pitcher if role == "pitcher" else configs_by_role.batter
+        if role == "pitcher":
+            return configs_by_role.pitcher
+        if role == "batter":
+            return configs_by_role.batter
+        # catcher: prefer explicit config, fall back to batter.
+        return configs_by_role.catcher or configs_by_role.batter
     if default is not None:
-        # Return the default clustering configuration.
         return default
-    # Raise an error if no clustering configuration is provided.
     raise ValueError("No clustering config: pass config= or configs_by_role=.")
 
 
@@ -151,35 +212,101 @@ def numeric_feature_columns(df: pd.DataFrame) -> List[str]:
     return sorted(c for c in numeric if c not in id_set)
 
 
-def _fit_pca_fixed(
+def _fit_pca(
     X_scaled: np.ndarray,
     cfg: ArchetypeClusteringConfig,
-) -> tuple[PCA, int, List[float], float]:
-    """Fit PCA with ``cfg.pca_n_components``."""
+) -> tuple[PCA, int, List[float], float, str]:
+    """
+    Fit PCA either by fixed ``cfg.pca_n_components`` or by ``cfg.pca_variance_target``.
+
+    Returns (pca, n_components_kept, explained_variance_ratios, total_explained, mode).
+    ``mode`` is ``'fixed'`` or ``'variance_target'`` for the metadata.
+    """
     n_samples, n_features = X_scaled.shape
-    # Calculate the maximum rank.
     max_rank = min(n_features, max(1, n_samples - 1))
-    # Calculate the number of components to keep.
-    n_keep = min(int(cfg.pca_n_components), max_rank)
+
+    if cfg.pca_variance_target is not None:
+        # Fit at max rank, then truncate to the smallest n that hits the target.
+        full = PCA(n_components=max_rank, random_state=cfg.random_state)
+        full.fit(X_scaled)
+        cum = np.cumsum(full.explained_variance_ratio_)
+        n_keep = int(np.searchsorted(cum, cfg.pca_variance_target) + 1)
+        n_keep = min(n_keep, max_rank)
+        if n_keep < 1:
+            raise ValueError(
+                f"PCA produced no components for variance target {cfg.pca_variance_target!r}."
+            )
+        pca = PCA(n_components=n_keep, random_state=cfg.random_state)
+        pca.fit(X_scaled)
+        return (
+            pca,
+            n_keep,
+            pca.explained_variance_ratio_.tolist(),
+            float(np.sum(pca.explained_variance_ratio_)),
+            "variance_target",
+        )
+
+    requested = int(cfg.pca_n_components)
+    n_keep = min(requested, max_rank)
     if n_keep < 1:
         raise ValueError(
-            f"Cannot run PCA: need pca_n_components >= 1 and rank >= 1; got pca_n_components={cfg.pca_n_components!r}, max_rank={max_rank}."
+            f"Cannot run PCA: need pca_n_components >= 1 and rank >= 1; "
+            f"got pca_n_components={requested!r}, max_rank={max_rank}."
         )
-    if cfg.pca_n_components > max_rank:
+    if requested > max_rank:
         logger.warning(
             "pca_n_components=%s exceeds max_rank=%s; using %s components.",
-            cfg.pca_n_components,
+            requested,
             max_rank,
             n_keep,
         )
-    # Fit the PCA model.
     pca = PCA(n_components=n_keep, random_state=cfg.random_state)
     pca.fit(X_scaled)
-    # Get the explained variance ratio.
-    evr = pca.explained_variance_ratio_.tolist()
-    # Get the total explained variance.
-    total_var = float(np.sum(pca.explained_variance_ratio_))
-    return pca, n_keep, evr, total_var
+    return (
+        pca,
+        n_keep,
+        pca.explained_variance_ratio_.tolist(),
+        float(np.sum(pca.explained_variance_ratio_)),
+        "fixed",
+    )
+
+
+def _select_n_clusters_by_bic(
+    X_pca: np.ndarray,
+    cfg: ArchetypeClusteringConfig,
+) -> Tuple[int, List[Dict[str, float]]]:
+    """
+    Sweep ``cfg.bic_k_range`` and return the k with the lowest BIC plus the sweep table.
+
+    Caller-supplied ``k_max`` is clamped to ``n_samples - 1``. If clamping removes the
+    entire range, raises ValueError.
+    """
+    assert cfg.bic_k_range is not None
+    n_samples = X_pca.shape[0]
+    k_lo, k_hi = cfg.bic_k_range
+    k_hi = min(k_hi, max(2, n_samples - 1))
+    if k_hi < k_lo:
+        raise ValueError(
+            f"bic_k_range {cfg.bic_k_range!r} has no valid k for n_samples={n_samples}."
+        )
+    sweep: List[Dict[str, float]] = []
+    best_k = k_lo
+    best_bic = float("inf")
+    for k in range(k_lo, k_hi + 1):
+        gmm = GaussianMixture(
+            n_components=k,
+            covariance_type=cfg.covariance_type,
+            random_state=cfg.random_state,
+            n_init=cfg.n_init,
+        )
+        gmm.fit(X_pca)
+        bic = float(gmm.bic(X_pca))
+        aic = float(gmm.aic(X_pca))
+        sweep.append({"k": int(k), "bic": bic, "aic": aic})
+        if bic < best_bic:
+            best_bic = bic
+            best_k = k
+    return best_k, sweep
 
 
 def fit_archetype_clustering(
@@ -190,90 +317,83 @@ def fit_archetype_clustering(
     config: ArchetypeClusteringConfig,
 ) -> tuple[pd.DataFrame, Dict[str, Any], Dict[str, Any]]:
     """
-    Fit scaler → PCA → GaussianMixture on one role-year gold frame.
+    Fit RobustScaler -> PCA -> GaussianMixture on one role-year gold frame.
+
+    PCA dimensionality is either fixed (``config.pca_n_components``) or chosen to hit a
+    cumulative-variance target (``config.pca_variance_target``). Cluster count is either
+    fixed (``config.n_clusters``) or chosen by minimum BIC over ``config.bic_k_range``.
 
     Returns (assignments_df with cluster_id, metadata dict for JSON, joblib bundle dict).
     """
     if df.empty:
         raise ValueError("Empty dataframe for archetype clustering.")
-    if config.n_clusters < 2:
-        raise ValueError(f"n_clusters must be >= 2; got {config.n_clusters}.")
-    if config.pca_n_components < 1:
-        raise ValueError(f"pca_n_components must be >= 1; got {config.pca_n_components}.")
     if config.covariance_type not in _VALID_GMM_COVARIANCE:
         raise ValueError(
             f"covariance_type must be one of {sorted(_VALID_GMM_COVARIANCE)}; got {config.covariance_type!r}."
         )
-    # Prepare the dataframe for archetype clustering.
+
     df_work = prepare_dataframe_for_archetype_clustering(df)
-    # Get the index columns.
     index_cols = [c for c in ARCHETYPE_CLUSTER_INDEX if c in df.columns]
-    # Get the numeric feature columns.
     feature_cols = numeric_feature_columns(df_work)
-    # Raise an error if no numeric feature columns are found.
     if not feature_cols:
         raise ValueError("No numeric feature columns after exclusions.")
 
-    # Convert the feature columns to a numpy array.
     X = df_work[feature_cols].to_numpy(dtype=np.float64, copy=True)
-    # Raise an error if there are any NaN values in the feature matrix.
     if np.isnan(X).any():
         raise ValueError("NaN in feature matrix; expected gold-preprocessed inputs.")
 
-    # Get the number of samples.
     n_samples = X.shape[0]
-    # Raise an error if there are too few samples for clustering.
     if n_samples < MIN_SAMPLES_FOR_CLUSTERING:
         raise ValueError(
             f"Need at least {MIN_SAMPLES_FOR_CLUSTERING} rows for clustering; got {n_samples}."
         )
-    # Raise an error if the number of clusters exceeds the number of samples.
-    if config.n_clusters > n_samples:
+    if config.n_clusters is not None and config.n_clusters > n_samples:
         raise ValueError(
             f"n_clusters ({config.n_clusters}) cannot exceed n_samples ({n_samples})."
         )
 
-    # Fit the scaler.
-    scaler = StandardScaler()
+    # RobustScaler uses median / IQR, which is far less sensitive than StandardScaler to
+    # the small-sample outlier seasons (rookie call-ups, extreme platoon roles) that
+    # were warping clusters before.
+    scaler = RobustScaler()
     X_scaled = scaler.fit_transform(X)
 
-    # Fit the PCA model.
-    pca, n_comp, evr_list, total_explained = _fit_pca_fixed(X_scaled, config)
-    # Transform the scaled features to PCA space.
+    pca, n_comp, evr_list, total_explained, pca_mode = _fit_pca(X_scaled, config)
     X_pca = pca.transform(X_scaled)
 
-    # Fit the Gaussian Mixture model.
+    # Pick n_clusters: explicit fixed value, or BIC sweep over the configured range.
+    bic_sweep: Optional[List[Dict[str, float]]] = None
+    if config.n_clusters is not None:
+        n_clusters = int(config.n_clusters)
+        n_clusters_mode = "fixed"
+    else:
+        n_clusters, bic_sweep = _select_n_clusters_by_bic(X_pca, config)
+        n_clusters_mode = "bic_selected"
+
     gmm = GaussianMixture(
-        n_components=config.n_clusters,
+        n_components=n_clusters,
         covariance_type=config.covariance_type,
         random_state=config.random_state,
         n_init=config.n_init,
     )
     gmm.fit(X_pca)
-    # Get the cluster labels.
     labels = gmm.predict(X_pca)
 
-    # Calculate the silhouette score.
     sil = float("nan")
-    if config.n_clusters >= 2 and n_samples > config.n_clusters:
+    if n_clusters >= 2 and n_samples > n_clusters:
         try:
             sil = float(silhouette_score(X_pca, labels))
         except ValueError:
             pass
-    # Calculate the Davies-Bouldin score.
     db = float("nan")
     try:
         db = float(davies_bouldin_score(X_pca, labels))
     except ValueError:
         pass
-    # Calculate the AIC score.
     gmm_aic = float(gmm.aic(X_pca))
-    # Calculate the BIC score.
     gmm_bic = float(gmm.bic(X_pca))
-    # Calculate the lower bound.
     gmm_lower_bound = float(gmm.lower_bound_)
 
-    # Reset the index and add the cluster labels.
     out = df_work.reset_index()
     out["cluster_id"] = labels.astype(np.int64)
 
@@ -289,13 +409,18 @@ def fit_archetype_clustering(
         "clustering_index_columns": index_cols,
         "feature_exclusion_rules": [
             "player_id, player_name, year, role, n_pitches_total → not used as PCA/GMM features (index via prepare_dataframe_for_archetype_clustering when present as columns)",
-            "All other column selection for clustering is done in silver_to_gold_preprocessing (archetype-training drop pass)",
+            "All other column selection for clustering is done in silver_to_gold_preprocessing (archetype-training drop pass and role-irrelevant drop pass)",
         ],
+        "scaler": "RobustScaler",
+        "pca_mode": pca_mode,
         "pca_n_components": n_comp,
+        "pca_variance_target": config.pca_variance_target,
         "pca_explained_variance_ratio": evr_list,
         "pca_total_explained_variance": total_explained,
         "clustering_method": "gaussian_mixture",
-        "n_clusters": config.n_clusters,
+        "n_clusters_mode": n_clusters_mode,
+        "n_clusters": n_clusters,
+        "bic_sweep": bic_sweep,
         "gmm_covariance_type": config.covariance_type,
         "gmm_aic": gmm_aic,
         "gmm_bic": gmm_bic,
@@ -316,7 +441,7 @@ def fit_archetype_clustering(
         "feature_columns": feature_cols,
         "role": role,
         "year": year,
-        "n_clusters": config.n_clusters,
+        "n_clusters": n_clusters,
         "config": config,
     }
 
@@ -391,7 +516,7 @@ def build_gold_archetype_clustering(
             "role_years_processed": [],
         }
 
-    valid_roles = ("batter", "pitcher", "all")
+    valid_roles = ("batter", "pitcher", "catcher", "all")
     if role_filter not in valid_roles:
         return {
             "status": "error",
@@ -401,7 +526,9 @@ def build_gold_archetype_clustering(
             "role_years_processed": [],
         }
 
-    roles: Sequence[str] = ("batter", "pitcher") if role_filter == "all" else (role_filter,)
+    roles: Sequence[str] = (
+        ("batter", "pitcher", "catcher") if role_filter == "all" else (role_filter,)
+    )
 
     try:
         for r in roles:
