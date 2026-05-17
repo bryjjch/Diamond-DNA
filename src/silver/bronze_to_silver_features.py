@@ -30,7 +30,9 @@ from .silver_build_player_year_archetype_rows import (
 from .silver_defence_player_year import (
     fangraphs_to_mlbam_map,
     load_defence_metrics_by_player_year,
+    load_primary_positions_by_player_year,
     merge_defence_into_row,
+    merge_primary_position_into_row,
 )
 from .silver_player_names import (
     build_mlbam_statcast_style_name_map,
@@ -219,6 +221,7 @@ def build_bronze_to_silver_features(
 
         # Build the defence metrics by year.
         defence_by_year: Dict[int, Dict[int, Dict[str, float]]] = {}
+        positions_by_year: Dict[int, Dict[int, str]] = {}
         if role == "batter":
             fg_map = fangraphs_to_mlbam_map(chadwick_df) if chadwick_df is not None else fangraphs_to_mlbam_map()
             for y in range(year_lo, year_hi + 1):
@@ -227,6 +230,11 @@ def build_bronze_to_silver_features(
                     raw_defence_prefix,
                     y,
                     fg_id_map=fg_map,
+                )
+                positions_by_year[y] = load_primary_positions_by_player_year(
+                    bucket,
+                    raw_defence_prefix,
+                    y,
                 )
 
         feature_rows: List[Dict[str, object]] = []
@@ -264,9 +272,10 @@ def build_bronze_to_silver_features(
                 if row is None:
                     continue
 
-                # Merge the defence metrics into the row.
+                # Merge the defence metrics and primary position into the row.
                 if role == "batter":
                     merge_defence_into_row(row, defence_by_year.get(y, {}))
+                    merge_primary_position_into_row(row, positions_by_year.get(y, {}))
 
                 # Validate the feature row.
                 _validate_feature_row(row, role=role)
