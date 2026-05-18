@@ -8,11 +8,8 @@ import pytest
 from sklearn.datasets import make_blobs
 
 from src.ml.archetype_clustering import (
-    ARCHETYPE_CLUSTER_LABELS_BATTER,
-    ARCHETYPE_CLUSTER_LABELS_PITCHER,
     ArchetypeClusteringConfig,
     ArchetypeClusteringConfigsByRole,
-    archetype_cluster_label,
     build_gold_archetype_clustering,
     fit_archetype_clustering,
     numeric_feature_columns,
@@ -39,18 +36,6 @@ def test_numeric_feature_columns_excludes_ids_and_pitch_count():
     assert "year" not in cols
     assert "n_pitches_total" not in cols
     assert cols == ["swing_rate", "whiff_rate"]
-
-
-def test_archetype_cluster_label_mappings():
-    assert len(ARCHETYPE_CLUSTER_LABELS_BATTER) == 6
-    assert len(ARCHETYPE_CLUSTER_LABELS_PITCHER) == 6
-    assert ARCHETYPE_CLUSTER_LABELS_BATTER[0] == "The Power Slugger"
-    assert ARCHETYPE_CLUSTER_LABELS_PITCHER[5] == "The High-Leverage Power Reliever"
-    assert archetype_cluster_label("batter", 3) == "The Contact Hitter"
-    assert archetype_cluster_label("pitcher", 4) == "The Groundball Specialist"
-    assert archetype_cluster_label("catcher", 0) == "The Defensive Anchor"
-    assert archetype_cluster_label("batter", 99) == "Cluster 99"
-    assert archetype_cluster_label("unknown_role", 0) == "Cluster 0"
 
 
 def test_archetype_clustering_config_validates_mutex():
@@ -335,6 +320,10 @@ def test_build_gold_archetype_clustering_writes_artifacts(monkeypatch):
         "src.ml.archetype_clustering._write_json_to_s3",
         fake_write_json,
     )
+    monkeypatch.setattr(
+        "src.ml.archetype_clustering._build_cluster_labels_for_role_year",
+        lambda **kwargs: None,
+    )
 
     result = build_gold_archetype_clustering(
         bucket="test-bucket",
@@ -408,6 +397,10 @@ def test_build_gold_archetype_clustering_configs_by_role_different_k(monkeypatch
     monkeypatch.setattr(
         "src.ml.archetype_clustering._write_json_to_s3",
         fake_write_json,
+    )
+    monkeypatch.setattr(
+        "src.ml.archetype_clustering._build_cluster_labels_for_role_year",
+        lambda **kwargs: None,
     )
 
     result = build_gold_archetype_clustering(
