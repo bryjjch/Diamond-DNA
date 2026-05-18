@@ -29,7 +29,7 @@ def test_numeric_feature_columns_excludes_ids_and_pitch_count():
             "role": ["batter", "batter"],
             "n_pitches_total": [100, 200],
             "swing_rate": [0.4, 0.5],
-            "contact_rate": [0.8, 0.75],
+            "whiff_rate": [0.2, 0.25],
         }
     )
     df_i = prepare_dataframe_for_archetype_clustering(df)
@@ -38,7 +38,7 @@ def test_numeric_feature_columns_excludes_ids_and_pitch_count():
     assert "player_name" not in cols
     assert "year" not in cols
     assert "n_pitches_total" not in cols
-    assert cols == ["contact_rate", "swing_rate"]
+    assert cols == ["swing_rate", "whiff_rate"]
 
 
 def test_archetype_cluster_label_mappings():

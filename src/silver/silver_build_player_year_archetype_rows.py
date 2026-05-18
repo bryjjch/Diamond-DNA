@@ -86,10 +86,8 @@ def player_year_features_from_df(
     # Compute whiffs using description heuristics.
     desc = df["description"].fillna("").astype(str).str.lower()
     whiff_flag = swing_flag & desc.str.contains("swinging_strike", na=False)
-    contact_flag = swing_flag & ~whiff_flag
 
-    # Compute the contact rate and whiff rate.
-    contact_rate = float(contact_flag.mean()) if total_pitches else float("nan")
+    # Compute the whiff rate.
     whiff_rate = float(whiff_flag.mean()) if total_pitches else float("nan")
 
     if role == "pitcher":
@@ -148,7 +146,6 @@ def player_year_features_from_df(
                 "batter_swing_rate": swing_rate,
                 "batter_zone_swing_rate": zone_swing_rate,
                 "batter_chase_rate": chase_rate,
-                "batter_contact_rate": contact_rate,
                 "batter_whiff_rate": whiff_rate,
                 "in_zone_rate": float(in_zone.mean()),
                 "release_speed_max": release_speed_max,
@@ -157,6 +154,7 @@ def player_year_features_from_df(
                 "velo_differential": velo_diff,
                 "release_speed_iqr": iqr_mean_summary(df["release_speed"])[1],
                 "release_spin_rate_iqr": iqr_mean_summary(df["release_spin_rate"])[1],
+                "pfx_x_mean": float(pd.to_numeric(df["pfx_x"], errors="coerce").mean(skipna=True)),
                 "pfx_x_iqr": iqr_mean_summary(df["pfx_x"])[1],
                 "release_extension_mean": float(pd.to_numeric(df["release_extension"], errors="coerce").mean(skipna=True)),
                 "release_extension_iqr": iqr_mean_summary(df["release_extension"])[1],
@@ -235,6 +233,17 @@ def player_year_features_from_df(
         bb_b = batted_ball_type_rates(df)
         # Get the sweet spot rate.
         sweet_spot = sweet_spot_rate(df["launch_angle"])
+        # Walk rate (BB%) = walks / plate appearances. The `events` column is only
+        # populated on the final pitch of each PA, so non-null events count PAs and
+        # `walk` / `intent_walk` events count walks.
+        if "events" in df.columns:
+            events = df["events"].astype("object")
+            pa_mask = events.notna() & (events.astype(str).str.strip() != "")
+            pa_count = int(pa_mask.sum())
+            walk_count = int(events.isin(["walk", "intent_walk"]).sum())
+            walk_rate = float(walk_count / pa_count) if pa_count > 0 else float("nan")
+        else:
+            walk_rate = float("nan")
 
         # Set the output dictionary.
         out = dict(base)
@@ -244,8 +253,8 @@ def player_year_features_from_df(
                 "swing_rate": swing_rate,
                 "zone_swing_rate": zone_swing_rate,
                 "chase_rate": chase_rate,
-                "contact_rate": contact_rate,
                 "whiff_rate": whiff_rate,
+                "walk_rate": walk_rate,
                 "barrel_rate": barrel_rate,
                 "hard_hit_rate": hard_hit_rate,
                 "pull_percent": pull_p,
@@ -281,13 +290,14 @@ def player_year_features_from_df(
 def _validate_feature_row(row: Dict[str, object], *, role: str) -> None:
     """Checks to catch broken derived flags."""
     # Required rates for batter features.
-    required_rates = ["swing_rate", "zone_swing_rate", "chase_rate", "contact_rate", "whiff_rate"]
+    required_rates = ["swing_rate", "zone_swing_rate", "chase_rate", "whiff_rate"]
     # Required rates for pitcher features.
-    pitcher_rates = ["batter_swing_rate", "batter_zone_swing_rate", "batter_chase_rate", "batter_contact_rate", "batter_whiff_rate"]
+    pitcher_rates = ["batter_swing_rate", "batter_zone_swing_rate", "batter_chase_rate", "batter_whiff_rate"]
 
     # If the role is a batter, add the required rates for batter features.
     if role == "batter":
         rates_to_check = required_rates + [
+            "walk_rate",
             "barrel_rate",
             "hard_hit_rate",
             "pull_percent",

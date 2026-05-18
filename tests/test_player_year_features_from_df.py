@@ -44,11 +44,25 @@ def test_player_year_features_from_df_pitcher_minimal():
     assert row["n_pitches_total"] == 600
 
 
-def _batter_df(n: int = 600, with_bip: int = 250) -> pd.DataFrame:
+def _batter_df(
+    n: int = 600,
+    with_bip: int = 250,
+    *,
+    n_walks: int = 0,
+    n_pa: int = 0,
+) -> pd.DataFrame:
     rng = np.random.default_rng(1)
     zone = rng.integers(0, 14, size=n)
     desc = ["hit_into_play"] * with_bip + ["called_strike"] * (n - with_bip)
     rng.shuffle(desc)
+    events = [None] * n
+    if n_pa > 0:
+        assert n_walks <= n_pa <= n
+        ev_list = ["walk"] * n_walks + ["field_out"] * (n_pa - n_walks)
+        rng.shuffle(ev_list)
+        idx = rng.choice(n, size=n_pa, replace=False)
+        for i, e in zip(idx, ev_list):
+            events[int(i)] = e
     return pd.DataFrame(
         {
             "zone": zone,
@@ -59,6 +73,7 @@ def _batter_df(n: int = 600, with_bip: int = 250) -> pd.DataFrame:
             "estimated_slg_using_speedangle": rng.normal(0.4, 0.15, size=n),
             "woba_value": rng.normal(0.32, 0.1, size=n),
             "estimated_woba_using_speedangle": rng.normal(0.32, 0.1, size=n),
+            "events": events,
         }
     )
 
@@ -80,3 +95,41 @@ def test_player_year_features_from_df_batter_minimal():
     assert row is not None
     assert row["player_name"] == ""
     assert row["sprint_speed_mean"] == 28.5
+    assert "contact_rate" not in row
+    assert "walk_rate" in row
+
+
+def test_player_year_features_from_df_batter_walk_rate():
+    df = _batter_df(600, with_bip=300, n_walks=20, n_pa=200)
+    row = player_year_features_from_df(
+        df=df,
+        role="batter",
+        player_id=999,
+        year=2023,
+        min_pitches_pitcher=500,
+        min_pitches_batter=500,
+        min_batted_ball_batter=200,
+        hard_hit_speed_mph=95.0,
+        min_pitches_per_pitch_type=15,
+        sprint_speed_lookup={999: 28.5},
+    )
+    assert row is not None
+    assert row["walk_rate"] == 20 / 200
+
+
+def test_player_year_features_from_df_pitcher_has_pfx_x_mean():
+    df = _pitcher_df(600)
+    row = player_year_features_from_df(
+        df=df,
+        role="pitcher",
+        player_id=12345,
+        year=2024,
+        min_pitches_pitcher=500,
+        min_pitches_batter=500,
+        min_batted_ball_batter=200,
+        hard_hit_speed_mph=95.0,
+        min_pitches_per_pitch_type=15,
+    )
+    assert row is not None
+    assert "pfx_x_mean" in row
+    assert "batter_contact_rate" not in row
