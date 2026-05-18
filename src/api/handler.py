@@ -99,7 +99,7 @@ def _route_clusters() -> Dict[str, Any]:
     if tables is None:
         return _response(503, {"ok": False, "error": err})
     try:
-        data = clusters_payload(tables.archetypes)
+        data = clusters_payload(tables.archetypes, tables.labels)
     except ValueError as exc:
         return _response(500, {"ok": False, "error": str(exc)})
     return _response(200, {"ok": True, "clusters": data})
@@ -112,7 +112,7 @@ def _route_search(qs: Dict[str, str]) -> Dict[str, Any]:
         return _response(503, {"ok": False, "error": err})
     q = qs.get("q", "")
     try:
-        hits = search_players(tables.archetypes, q)
+        hits = search_players(tables.archetypes, q, tables.labels)
     except ValueError as exc:
         return _response(500, {"ok": False, "error": str(exc)})
     return _response(200, {"ok": True, "q": q, "results": hits})
