@@ -17,28 +17,28 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import pandas as pd
 
-from ..pipeline.s3_interaction import (
+from ...common.s3_interaction import (
     feature_player_year_output_key,
     raw_statcast_day_key,
     read_parquet_from_s3,
     write_parquet_to_s3,
 )
-from .silver_build_player_year_archetype_rows import (
+from .build_player_year_archetype_rows import (
     _validate_feature_row,
     player_year_features_from_df,
 )
-from .silver_defence_player_year import (
+from .defence_player_year import (
     fangraphs_to_mlbam_map,
     load_defence_metrics_by_player_year,
     load_primary_positions_by_player_year,
     merge_defence_into_row,
     merge_primary_position_into_row,
 )
-from .silver_player_names import (
+from .player_names import (
     build_mlbam_statcast_style_name_map,
     resolve_mlbam_display_name,
 )
-from .silver_sprint_helper import build_sprint_speed_lookups_by_year
+from .sprint_helper import build_sprint_speed_lookups_by_year
 
 logger = logging.getLogger(__name__)
 
@@ -321,13 +321,13 @@ def build_bronze_to_silver_features(
 
 
 def main() -> None:
-    from ..pipeline.cli import run_bronze_to_silver_features_main
+    from ...common.cli import run_bronze_to_silver_features_main
 
     run_bronze_to_silver_features_main()
 
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    from ..pipeline.handlers import bronze_to_silver_features_handler
+    from ...common.handlers import bronze_to_silver_features_handler
 
     return bronze_to_silver_features_handler(event, context)
 

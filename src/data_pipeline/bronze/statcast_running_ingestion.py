@@ -20,7 +20,7 @@ except Exception:
     statcast_sprint_speed = None
 
 from .ingest_common import retry_with_backoff
-from ..pipeline.s3_interaction import raw_sprint_speed_key, write_parquet_to_s3
+from ...common.s3_interaction import raw_sprint_speed_key, write_parquet_to_s3
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -99,13 +99,13 @@ def ingest_year_range(start_year: int, end_year: int, s3_bucket: str, s3_prefix:
 
 
 def main() -> None:
-    from ..pipeline.cli import run_statcast_running_ingestion_main
+    from ...common.cli import run_statcast_running_ingestion_main
 
     run_statcast_running_ingestion_main()
 
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    from ..pipeline.handlers import statcast_running_ingestion_handler
+    from ...common.handlers import statcast_running_ingestion_handler
 
     return statcast_running_ingestion_handler(event, context)
 

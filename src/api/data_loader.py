@@ -11,8 +11,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
-from ..pipeline.runtime import current_utc_year
-from ..pipeline.s3_interaction import (
+from ..common.runtime import current_utc_year
+from ..common.s3_interaction import (
     ARCHETYPE_CLUSTER_LABELS_FILENAME,
     get_s3_client,
     gold_archetype_assignments_key,
@@ -20,7 +20,7 @@ from ..pipeline.s3_interaction import (
     gold_player_similar_neighbors_key,
     read_parquet_from_s3,
 )
-from ..pipeline.settings import PipelineSettings
+from ..common.settings import PipelineSettings
 
 logger = logging.getLogger(__name__)
 

@@ -20,8 +20,8 @@ from sklearn.mixture import GaussianMixture
 from sklearn.metrics import davies_bouldin_score, silhouette_score
 from sklearn.preprocessing import RobustScaler
 
-from ..gold.silver_to_gold_preprocessing import ID_COLUMNS
-from ..pipeline.s3_interaction import (
+from ..data_pipeline.gold.preprocessing import ID_COLUMNS
+from ..common.s3_interaction import (
     get_s3_client,
     gold_archetype_assignments_key,
     gold_archetype_cluster_labels_key,
@@ -386,7 +386,7 @@ def fit_archetype_clustering(
         "clustering_index_columns": index_cols,
         "feature_exclusion_rules": [
             "player_id, player_name, year, role, n_pitches_total → not used as PCA/GMM features (index via prepare_dataframe_for_archetype_clustering when present as columns)",
-            "All other column selection for clustering is done in silver_to_gold_preprocessing (archetype-training drop pass and role-irrelevant drop pass)",
+            "All other column selection for clustering is done in data_pipeline.gold.preprocessing (archetype-training drop pass and role-irrelevant drop pass)",
         ],
         "scaler": "RobustScaler",
         "pca_mode": pca_mode,
@@ -672,13 +672,13 @@ def build_gold_archetype_clustering(
 
 
 def main() -> None:
-    from ..pipeline.cli import run_gold_archetype_clustering_main
+    from ..common.cli import run_gold_archetype_clustering_main
 
     run_gold_archetype_clustering_main()
 
 
 def handler(event: dict, context) -> dict:
-    from ..pipeline.handlers import gold_archetype_clustering_handler
+    from ..common.handlers import gold_archetype_clustering_handler
 
     return gold_archetype_clustering_handler(event, context)
 

@@ -1,4 +1,4 @@
-# Bronze layer — AWS Lambda: Statcast pitch ingest → S3 (src.bronze.statcast_ingestion.handler).
+# Bronze layer — AWS Lambda: Statcast pitch ingest → S3 (src.data_pipeline.bronze.statcast_ingestion.handler).
 # Build from repo root: docker build --platform linux/amd64 --provenance=false -f docker/bronze/Dockerfile .
 # Stage 1: install dependencies inside the Lambda runtime image for ABI compatibility
 FROM public.ecr.aws/lambda/python:3.12 AS builder
@@ -13,4 +13,4 @@ FROM public.ecr.aws/lambda/python:3.12
 COPY --from=builder /install/ ${LAMBDA_TASK_ROOT}/
 COPY src/ ${LAMBDA_TASK_ROOT}/src/
 
-CMD ["src.bronze.statcast_ingestion.handler"]
+CMD ["src.data_pipeline.bronze.statcast_ingestion.handler"]

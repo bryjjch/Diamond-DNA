@@ -14,8 +14,7 @@ import pandas as pd
 from pybaseball import statcast
 
 from .ingest_common import retry_with_backoff
-from ..pipeline.s3_interaction import raw_statcast_day_key
-from ..pipeline.s3_interaction import write_parquet_to_s3
+from ...common.s3_interaction import raw_statcast_day_key, write_parquet_to_s3
 
 # Configure logging
 logging.basicConfig(
@@ -157,13 +156,13 @@ def ingest_date_range(start_date_str: str, end_date_str: str, s3_bucket: str, s3
 
 
 def main() -> None:
-    from ..pipeline.cli import run_statcast_ingestion_main
+    from ...common.cli import run_statcast_ingestion_main
 
     run_statcast_ingestion_main()
 
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    from ..pipeline.handlers import statcast_ingestion_handler
+    from ...common.handlers import statcast_ingestion_handler
 
     return statcast_ingestion_handler(event, context)
 

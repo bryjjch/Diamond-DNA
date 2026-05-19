@@ -16,7 +16,7 @@ import pandas as pd
 import sklearn
 from sklearn.neighbors import NearestNeighbors
 
-from ..pipeline.s3_interaction import (
+from ..common.s3_interaction import (
     get_s3_client,
     gold_archetype_clustering_model_key,
     gold_player_similar_neighbors_key,
@@ -415,13 +415,13 @@ def build_gold_player_similarity(
 
 
 def main() -> None:
-    from ..pipeline.cli import run_gold_player_similarity_main
+    from ..common.cli import run_gold_player_similarity_main
 
     run_gold_player_similarity_main()
 
 
 def handler(event: dict, context) -> dict:
-    from ..pipeline.handlers import gold_player_similarity_handler
+    from ..common.handlers import gold_player_similarity_handler
 
     return gold_player_similarity_handler(event, context)
 

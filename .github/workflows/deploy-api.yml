@@ -17,7 +17,7 @@ on:
       - "src/api/handler.py"
       - "src/api/data_loader.py"
       - "src/api/__init__.py"
-      - "src/pipeline/**"
+      - "src/common/**"
       - "src/ml/archetype_clustering.py"
       - "docker/api/**"
       - ".github/workflows/deploy-api.yml"

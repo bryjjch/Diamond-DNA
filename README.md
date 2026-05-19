@@ -26,7 +26,7 @@ as a cloud-native web app.
                 ┌──────────────────────────────┴───────────────────────┐
                 │ Pipeline Lambdas (EventBridge, daily)                │
                 │   bronze → silver → gold                             │
-                │   src/bronze, src/silver, src/gold, docker/{layer}   │
+                │   src/data_pipeline/{bronze,silver,gold}, docker/    │
                 └──────────────────────────────────────────────────────┘
 ```
 
@@ -34,7 +34,7 @@ as a cloud-native web app.
 | ------------ | ------------------------------------------- | ------------------------ |
 | Frontend     | `frontend/` (Vite + React + TS, Tailwind)   | Vercel (auto on push)    |
 | HTTP API     | `src/api/` + `docker/api/`                  | GitHub Actions → ECR → Lambda |
-| Pipeline ETL | `src/bronze/`, `src/silver/`, `src/gold/`   | Terraform + manual build |
+| Pipeline ETL | `src/data_pipeline/{bronze,silver,gold}/`   | Terraform + manual build |
 | ML training  | `src/ml/`                                   | Manual / batch CLI       |
 | Infra        | `terraform/`                                | `terraform apply`        |
 
@@ -55,14 +55,15 @@ under `src/ml/`; their outputs are what the HTTP API serves.
 
 ```
 src/
-  api/         # HTTP API Lambda handler
-  bronze/      # daily Statcast ingest
-  silver/      # bronze → silver feature build
-  gold/        # silver → gold preprocessing
-  ml/          # archetype clustering, KNN similarity
-  pipeline/    # shared S3 / settings helpers
-docker/        # Dockerfiles + requirements per Lambda image
-frontend/      # React + TS SPA (Vercel)
-terraform/     # IaC: S3, pipeline Lambdas, API, CI/CD
-tests/         # pytest
+  api/                  # HTTP API Lambda handler
+  common/               # shared S3 / settings / runtime helpers; CLI + Lambda handler wrappers
+  data_pipeline/        # bronze → silver → gold ETL
+    bronze/             # daily Statcast / running / defence ingest
+    silver/             # bronze → silver feature build
+    gold/               # silver → gold preprocessing
+  ml/                   # archetype clustering, KNN similarity
+docker/                 # Dockerfiles + requirements per Lambda image
+frontend/               # React + TS SPA (Vercel)
+terraform/              # IaC: S3, pipeline Lambdas, API, CI/CD
+tests/                  # pytest
 ```

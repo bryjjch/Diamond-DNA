@@ -30,7 +30,7 @@ output "statcast_silver_lambda_function_arn" {
 }
 
 output "statcast_silver_ecr_repository_url" {
-  description = "ECR repository URL for the silver feature build Lambda image (build: docker build --platform linux/amd64 --provenance=false -f docker/silver/lambda/Dockerfile .)"
+  description = "ECR repository URL for the silver feature build Lambda image (build: docker build --platform linux/amd64 --provenance=false -f docker/silver/Dockerfile .)"
   value       = module.lambda.silver_ecr_repository_url
 }
 
@@ -46,7 +46,7 @@ output "statcast_gold_lambda_function_arn" {
 }
 
 output "statcast_gold_ecr_repository_url" {
-  description = "ECR repository URL for the gold preprocessing Lambda image (build: docker build --platform linux/amd64 --provenance=false -f docker/gold/lambda/Dockerfile .)"
+  description = "ECR repository URL for the gold preprocessing Lambda image (build: docker build --platform linux/amd64 --provenance=false -f docker/gold/Dockerfile .)"
   value       = module.lambda.gold_ecr_repository_url
 }
 

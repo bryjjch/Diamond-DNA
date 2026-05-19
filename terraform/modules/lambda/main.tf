@@ -243,8 +243,8 @@ resource "aws_lambda_function" "statcast_ingestion" {
   tags = var.tags
 }
 
-# Silver feature build Lambda (container: bronze_to_silver_features)
-# Build: docker build --platform linux/amd64 --provenance=false -f docker/silver/lambda/Dockerfile -t <ecr_url>:<tag> .
+# Silver feature build Lambda (container: data_pipeline.silver.feature_build)
+# Build: docker build --platform linux/amd64 --provenance=false -f docker/silver/Dockerfile -t <ecr_url>:<tag> .
 resource "aws_lambda_function" "silver_feature_build" {
   function_name = "${var.name_prefix}-silver-feature-build"
   role          = aws_iam_role.silver_feature_build.arn
@@ -271,8 +271,8 @@ resource "aws_lambda_function" "silver_feature_build" {
   tags = var.tags
 }
 
-# Gold preprocessing Lambda (container: silver_to_gold_preprocessing)
-# Build: docker build --platform linux/amd64 --provenance=false -f docker/gold/lambda/Dockerfile -t <ecr_url>:<tag> .
+# Gold preprocessing Lambda (container: data_pipeline.gold.preprocessing)
+# Build: docker build --platform linux/amd64 --provenance=false -f docker/gold/Dockerfile -t <ecr_url>:<tag> .
 resource "aws_lambda_function" "gold_preprocessing" {
   function_name = "${var.name_prefix}-gold-preprocessing"
   role          = aws_iam_role.gold_preprocessing.arn
