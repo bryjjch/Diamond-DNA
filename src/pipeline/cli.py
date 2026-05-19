@@ -66,6 +66,7 @@ def run_gold_archetype_clustering_main() -> None:
     from ..ml.archetype_clustering import (
         ArchetypeClusteringConfig,
         ArchetypeClusteringConfigsByRole,
+        DEFAULT_ROLE_HYPERPARAMS,
         GMM_COVARIANCE_TYPES,
         build_gold_archetype_clustering,
     )
@@ -147,6 +148,11 @@ def run_gold_archetype_clustering_main() -> None:
             k_n, bic_k = ns_k, _parse_bic_k_range(ns_bic_raw)
         else:
             k_n, bic_k = base_k, base_bic
+        role_defaults = DEFAULT_ROLE_HYPERPARAMS[role]
+        if pca_n is None and pca_var is None:
+            pca_n = role_defaults["pca_n_components"]
+        if k_n is None and bic_k is None:
+            k_n = role_defaults["n_clusters"]
         return _build_clustering_config_for_role(
             role,
             pca_n_components=pca_n,

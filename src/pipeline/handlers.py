@@ -40,6 +40,7 @@ def gold_archetype_clustering_handler(event: Dict[str, Any], context: Any) -> Di
     from ..ml.archetype_clustering import (
         ArchetypeClusteringConfig,
         ArchetypeClusteringConfigsByRole,
+        DEFAULT_ROLE_HYPERPARAMS,
         GMM_COVARIANCE_TYPES,
         build_gold_archetype_clustering,
     )
@@ -122,6 +123,12 @@ def gold_archetype_clustering_handler(event: Dict[str, Any], context: Any) -> Di
         pca_var = r_var if (r_pca is not None or r_var is not None) else base_var
         k_n = r_k if (r_k is not None or r_bic is not None) else base_k
         k_bic = r_bic if (r_k is not None or r_bic is not None) else base_bic
+
+        role_defaults = DEFAULT_ROLE_HYPERPARAMS[r]
+        if pca_n is None and pca_var is None:
+            pca_n = role_defaults["pca_n_components"]
+        if k_n is None and k_bic is None:
+            k_n = role_defaults["n_clusters"]
 
         if role in (r, "all"):
             if (pca_n is None) == (pca_var is None):

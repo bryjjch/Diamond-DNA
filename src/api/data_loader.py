@@ -30,6 +30,23 @@ _ROLES = ("batter", "pitcher", "catcher")
 # were generated for this role/year"; the lookup helper falls back to "Cluster N".
 ClusterLabelLookup = Dict[str, Dict[int, str]]
 
+_SOFT_REQUIRED = frozenset({"prob_primary", "prob_secondary", "cluster_id_secondary"})
+
+
+def _has_soft(df: pd.DataFrame) -> bool:
+    """True when the frame carries GMM soft-responsibility columns."""
+    return _SOFT_REQUIRED.issubset(df.columns)
+
+
+def _prob_cols(df: pd.DataFrame) -> List[str]:
+    """Per-cluster probability columns (``prob_<int>``) sorted by cluster index."""
+    cols = [
+        c
+        for c in df.columns
+        if c.startswith("prob_") and c not in {"prob_primary", "prob_secondary"}
+    ]
+    return sorted(cols, key=lambda c: int(c.split("_", 1)[1]))
+
 
 @dataclass(frozen=True)
 class LakeTables:
@@ -250,16 +267,29 @@ def clusters_payload(df: pd.DataFrame, labels: ClusterLabelLookup) -> List[Dict[
     if missing:
         raise ValueError(f"archetypes frame missing columns: {sorted(missing)}")
 
+    soft = _has_soft(df)
+    prob_cols = _prob_cols(df) if soft else []
+
     out: List[Dict[str, Any]] = []
     for (role, cid), g in df.sort_values(["role", "cluster_id", "player_name"]).groupby(
         ["role", "cluster_id"], sort=True
     ):
         r = str(role)
         cid_i = int(cid)
-        players = [
-            {"player_id": int(rw["player_id"]), "player_name": str(rw["player_name"])}
-            for _, rw in g.iterrows()
-        ]
+        players: List[Dict[str, Any]] = []
+        for _, rw in g.iterrows():
+            entry: Dict[str, Any] = {
+                "player_id": int(rw["player_id"]),
+                "player_name": str(rw["player_name"]),
+            }
+            if soft:
+                sec_cid = int(rw["cluster_id_secondary"])
+                entry["prob_primary"] = float(rw["prob_primary"])
+                entry["cluster_id_secondary"] = sec_cid
+                entry["prob_secondary"] = float(rw["prob_secondary"])
+                entry["secondary_label"] = cluster_label(labels, r, sec_cid)
+                entry["probs"] = [float(rw[c]) for c in prob_cols]
+            players.append(entry)
         out.append(
             {
                 "role": r,
@@ -287,23 +317,75 @@ def search_players(
 
     mask = df["player_name"].str.lower().str.contains(qn, na=False)
     sub = df.loc[mask].sort_values("player_name").head(limit)
+    soft = _has_soft(df)
+    prob_cols = _prob_cols(df) if soft else []
     rows: List[Dict[str, Any]] = []
     for _, rw in sub.iterrows():
         role = str(rw["role"])
         cid = int(rw["cluster_id"])
-        rows.append(
-            {
-                "player_id": int(rw["player_id"]),
-                "player_name": str(rw["player_name"]),
-                "role": role,
-                "year": int(rw["year"])
-                if "year" in df.columns and pd.notna(rw.get("year"))
-                else None,
-                "cluster_id": cid,
-                "cluster_label": cluster_label(labels, role, cid),
-            }
-        )
+        row: Dict[str, Any] = {
+            "player_id": int(rw["player_id"]),
+            "player_name": str(rw["player_name"]),
+            "role": role,
+            "year": int(rw["year"])
+            if "year" in df.columns and pd.notna(rw.get("year"))
+            else None,
+            "cluster_id": cid,
+            "cluster_label": cluster_label(labels, role, cid),
+        }
+        if soft:
+            sec_cid = int(rw["cluster_id_secondary"])
+            row["prob_primary"] = float(rw["prob_primary"])
+            row["cluster_id_secondary"] = sec_cid
+            row["prob_secondary"] = float(rw["prob_secondary"])
+            row["secondary_cluster_label"] = cluster_label(labels, role, sec_cid)
+            row["probs"] = [float(rw[c]) for c in prob_cols]
+        rows.append(row)
     return rows
+
+
+def player_soft_profile(
+    df: pd.DataFrame,
+    labels: ClusterLabelLookup,
+    *,
+    player_id: int,
+    role: str,
+) -> Optional[Dict[str, Any]]:
+    """Return one player's full sorted-by-prob cluster membership profile, or ``None`` if missing.
+
+    Returns ``None`` when the player+role row is absent or when the frame lacks soft columns.
+    """
+    if not _has_soft(df):
+        return None
+    role_l = role.strip().lower()
+    sub = df.loc[
+        (df["player_id"] == player_id) & (df["role"].str.lower() == role_l)
+    ]
+    if sub.empty:
+        return None
+    rw = sub.iloc[0]
+    prob_cols = _prob_cols(df)
+    sorted_probs = sorted(
+        (
+            {
+                "cluster_id": int(c.split("_", 1)[1]),
+                "label": cluster_label(labels, role_l, int(c.split("_", 1)[1])),
+                "prob": float(rw[c]),
+            }
+            for c in prob_cols
+        ),
+        key=lambda d: d["prob"],
+        reverse=True,
+    )
+    cid = int(rw["cluster_id"])
+    return {
+        "player_id": int(rw["player_id"]),
+        "player_name": str(rw["player_name"]),
+        "role": role_l,
+        "cluster_id": cid,
+        "cluster_label": cluster_label(labels, role_l, cid),
+        "probs": sorted_probs,
+    }
 
 
 def neighbors_for_player(

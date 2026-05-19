@@ -47,6 +47,15 @@ ARCHETYPE_CLUSTER_INDEX: tuple[str, ...] = (
 
 VALID_ROLES: Tuple[str, ...] = ("batter", "pitcher", "catcher")
 
+# Production defaults for per-role (pca_n_components, n_clusters), applied by the
+# CLI and Lambda handler when the caller does not supply PCA dimensionality or
+# cluster count. Tuned in notebooks/clustering_gmm_experimentation.ipynb.
+DEFAULT_ROLE_HYPERPARAMS: Mapping[str, Mapping[str, int]] = {
+    "pitcher": {"pca_n_components": 13, "n_clusters": 4},
+    "batter": {"pca_n_components": 4, "n_clusters": 4},
+    "catcher": {"pca_n_components": 4, "n_clusters": 3},
+}
+
 
 def prepare_dataframe_for_archetype_clustering(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -336,6 +345,11 @@ def fit_archetype_clustering(
     )
     gmm.fit(X_pca)
     labels = gmm.predict(X_pca)
+    probs = gmm.predict_proba(X_pca)
+    top2_idx = np.argsort(-probs, axis=1)[:, :2]
+    row_idx = np.arange(probs.shape[0])
+    prob_primary = probs[row_idx, top2_idx[:, 0]]
+    prob_secondary = probs[row_idx, top2_idx[:, 1]]
 
     sil = float("nan")
     if n_clusters >= 2 and n_samples > n_clusters:
@@ -354,6 +368,11 @@ def fit_archetype_clustering(
 
     out = df_work.reset_index()
     out["cluster_id"] = labels.astype(np.int64)
+    out["cluster_id_secondary"] = top2_idx[:, 1].astype(np.int64)
+    out["prob_primary"] = prob_primary.astype(np.float64)
+    out["prob_secondary"] = prob_secondary.astype(np.float64)
+    for k in range(n_clusters):
+        out[f"prob_{k}"] = probs[:, k].astype(np.float64)
 
     feature_hash = hashlib.sha256(",".join(feature_cols).encode()).hexdigest()[:16]
 
@@ -385,6 +404,10 @@ def fit_archetype_clustering(
         "gmm_lower_bound": gmm_lower_bound,
         "silhouette_score": sil,
         "davies_bouldin_score": db,
+        "soft_assignment_schema_version": 1,
+        "prob_columns": [f"prob_{k}" for k in range(n_clusters)],
+        "mean_max_prob": float(prob_primary.mean()),
+        "frac_confident_p_ge_0_7": float((prob_primary >= 0.7).mean()),
         "random_state": config.random_state,
         "n_init": config.n_init,
         "sklearn_version": sklearn.__version__,

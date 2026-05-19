@@ -17,6 +17,7 @@ from .data_loader import (
     load_lake_tables,
     neighbors_for_player,
     player_leaderboard,
+    player_soft_profile,
     search_players,
 )
 
@@ -167,6 +168,32 @@ def _route_neighbors(qs: Dict[str, str]) -> Dict[str, Any]:
     )
 
 
+def _route_player_soft_profile(qs: Dict[str, str]) -> Dict[str, Any]:
+    """Route the per-player soft GMM responsibility profile for one role/year."""
+    tables, err = _get_tables()
+    if tables is None:
+        return _response(503, {"ok": False, "error": err})
+    role = qs.get("role", "batter")
+    if role not in ("batter", "pitcher", "catcher"):
+        return _response(400, {"ok": False, "error": "role must be batter, pitcher, or catcher"})
+    try:
+        player_id = int(qs.get("player_id", ""))
+    except ValueError:
+        return _response(400, {"ok": False, "error": "player_id must be an integer"})
+    profile = player_soft_profile(
+        tables.archetypes, tables.labels, player_id=player_id, role=role
+    )
+    if profile is None:
+        return _response(
+            404,
+            {
+                "ok": False,
+                "error": "soft probabilities unavailable for this player/snapshot",
+            },
+        )
+    return _response(200, {"ok": True, **profile})
+
+
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     path, method = _extract_path_method(event)
 
@@ -188,6 +215,8 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         return _route_leaderboard(qs)
     if path in ("/api/neighbors", "/neighbors"):
         return _route_neighbors(qs)
+    if path in ("/api/player_soft_profile", "/player_soft_profile"):
+        return _route_player_soft_profile(qs)
     if path in ("/api/health", "/health", "/"):
         return _response(200, {"ok": True, "service": "diamond-dna-api"})
 
