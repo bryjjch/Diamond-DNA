@@ -1,9 +1,9 @@
 # Gold layer — AWS Lambda: silver → gold preprocessed tables (src.data_pipeline.gold.preprocessing).
-# Build from repo root: docker build --platform linux/amd64 --provenance=false -f docker/gold/lambda/Dockerfile .
+# Build from repo root: docker build --platform linux/amd64 --provenance=false -f docker/gold/Dockerfile .
 FROM public.ecr.aws/lambda/python:3.12 AS builder
 
 WORKDIR /install
-COPY docker/gold/lambda/requirements.txt .
+COPY docker/gold/requirements.txt .
 RUN pip install --no-cache-dir --target /install -r requirements.txt
 
 FROM public.ecr.aws/lambda/python:3.12
