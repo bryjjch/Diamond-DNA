@@ -38,7 +38,7 @@ as a cloud-native web app.
 | ML training  | `src/ml/`                                   | Manual / batch CLI       |
 | Infra        | `terraform/`                                | `terraform apply`        |
 
-## Data pipeline (unchanged)
+## Data pipeline
 
 Three Lambdas run daily on EventBridge:
 
