@@ -35,7 +35,7 @@ _load_error: str = ""
 
 
 def _get_tables() -> Tuple[Optional[LakeTables], str]:
-    """Lazy-load the lake tables once per container, mirroring the Flask app."""
+    """Lazy-load the lake tables once per container."""
     global _tables_cache, _load_error
     if _tables_cache is not None or _load_error:
         return _tables_cache, _load_error

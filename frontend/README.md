@@ -5,8 +5,8 @@ viewer. Built with Vite, Tailwind v4, TanStack Query, and React Router.
 
 ## Local development
 
-By default the dev server proxies `/api/*` to the deployed API Gateway, so no
-local backend is required:
+The dev server proxies `/api/*` to the deployed API Gateway, so no local
+backend is required:
 
 ```powershell
 cd frontend
@@ -15,17 +15,7 @@ npm run dev        # http://127.0.0.1:5173
 ```
 
 The proxy target is configured in [vite.config.ts](vite.config.ts) and can be
-overridden via `VITE_DEV_API_PROXY` — point it at the Python Lambda shim
-([../src/api/local_server.py](../src/api/local_server.py)) on
-`http://127.0.0.1:5001` if you want to develop against a local API:
-
-```powershell
-# Optional — only if you want a local API instead of the deployed one
-$env:WEBAPP_DATA_DIR = "<path-to-local-parquet-bundle>"   # or set S3_BUCKET + AWS creds
-diamond-dna-api    # serves on http://127.0.0.1:5001
-$env:VITE_DEV_API_PROXY = "http://127.0.0.1:5001"
-npm run dev
-```
+overridden via `VITE_DEV_API_PROXY`.
 
 ## Production (Vercel)
 
