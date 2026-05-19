@@ -52,7 +52,7 @@ VALID_ROLES: Tuple[str, ...] = ("batter", "pitcher", "catcher")
 # cluster count. Tuned in notebooks/clustering_gmm_experimentation.ipynb.
 DEFAULT_ROLE_HYPERPARAMS: Mapping[str, Mapping[str, int]] = {
     "pitcher": {"pca_n_components": 13, "n_clusters": 4},
-    "batter": {"pca_n_components": 4, "n_clusters": 4},
+    "batter": {"pca_n_components": 4, "n_clusters": 5},
     "catcher": {"pca_n_components": 4, "n_clusters": 3},
 }
 
