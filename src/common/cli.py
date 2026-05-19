@@ -287,7 +287,7 @@ def run_gold_player_similarity_main() -> None:
 
 
 def run_defence_ingestion_main() -> None:
-    from ..bronze.defence_ingestion import ingest_year_range
+    from ..data_pipeline.bronze.defence_ingestion import ingest_year_range
 
     cfg = PipelineSettings.from_environ()
     cy = current_utc_year()
@@ -344,7 +344,7 @@ def run_defence_ingestion_main() -> None:
 
 
 def run_statcast_ingestion_main() -> None:
-    from ..bronze.statcast_ingestion import ingest_date_range
+    from ..data_pipeline.bronze.statcast_ingestion import ingest_date_range
 
     cfg = PipelineSettings.from_environ()
     yesterday = yesterday_utc_date_str()
@@ -379,7 +379,7 @@ def run_statcast_ingestion_main() -> None:
 
 
 def run_statcast_running_ingestion_main() -> None:
-    from ..bronze.statcast_running_ingestion import ingest_year_range
+    from ..data_pipeline.bronze.statcast_running_ingestion import ingest_year_range
 
     cfg = PipelineSettings.from_environ()
     cy = current_utc_year()
@@ -411,7 +411,7 @@ def run_statcast_running_ingestion_main() -> None:
 
 
 def run_silver_to_gold_preprocessing_main() -> None:
-    from ..gold.silver_to_gold_preprocessing import build_silver_to_gold_preprocessing
+    from ..data_pipeline.gold.preprocessing import build_silver_to_gold_preprocessing
 
     cfg = PipelineSettings.from_environ()
     cy = current_utc_year()
@@ -454,7 +454,7 @@ def run_silver_to_gold_preprocessing_main() -> None:
 
 
 def run_bronze_to_silver_features_main() -> None:
-    from ..silver.bronze_to_silver_features import build_bronze_to_silver_features
+    from ..data_pipeline.silver.feature_build import build_bronze_to_silver_features
 
     cfg = PipelineSettings.from_environ()
     yesterday = yesterday_utc_date_str()

@@ -12,7 +12,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from ..pipeline.s3_interaction import (
+from ...common.s3_interaction import (
     feature_player_year_output_key,
     get_s3_client,
     gold_player_year_output_key,
@@ -488,13 +488,13 @@ def build_silver_to_gold_preprocessing(
 
 
 def main() -> None:
-    from ..pipeline.cli import run_silver_to_gold_preprocessing_main
+    from ...common.cli import run_silver_to_gold_preprocessing_main
 
     run_silver_to_gold_preprocessing_main()
 
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    from ..pipeline.handlers import silver_to_gold_preprocessing_handler
+    from ...common.handlers import silver_to_gold_preprocessing_handler
 
     return silver_to_gold_preprocessing_handler(event, context)
 

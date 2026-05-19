@@ -18,7 +18,7 @@ try:
 except Exception:
     chadwick_register = None
 
-from ..pipeline.s3_interaction import (
+from ...common.s3_interaction import (
     DEFENCE_ARM_STRENGTH_PARQUET,
     DEFENCE_CATCHER_FRAMING_PARQUET,
     DEFENCE_CATCHER_POPTIME_PARQUET,

@@ -37,7 +37,7 @@ except Exception:
 
 from .ingest_common import retry_with_backoff
 
-from ..pipeline.s3_interaction import (
+from ...common.s3_interaction import (
     DEFENCE_ARM_STRENGTH_PARQUET,
     DEFENCE_CATCHER_FRAMING_PARQUET,
     DEFENCE_CATCHER_POPTIME_PARQUET,
@@ -293,13 +293,13 @@ def ingest_year_range(
 
 
 def main() -> None:
-    from ..pipeline.cli import run_defence_ingestion_main
+    from ...common.cli import run_defence_ingestion_main
 
     run_defence_ingestion_main()
 
 
 def handler(event: dict, context: Any) -> dict:
-    from ..pipeline.handlers import defence_ingestion_handler
+    from ...common.handlers import defence_ingestion_handler
 
     return defence_ingestion_handler(event, context)
 

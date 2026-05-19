@@ -3,7 +3,7 @@
 Build player-year pitch-derived archetype-friendly features.
 
 Core row logic lives in ``player_year_features_from_df``. The production pipeline
-loads bronze dailies and writes silver tables via ``bronze_to_silver_features``.
+loads bronze dailies and writes silver tables via ``feature_build``.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from typing import Dict, Optional
 import numpy as np
 import pandas as pd
 
-from .silver_archetype_feature_defs import (
+from .archetype_feature_defs import (
     DEFAULT_BARREL_DEF,
     batted_ball_type_rates,
     compute_barrel_flag,

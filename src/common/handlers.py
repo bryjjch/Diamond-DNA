@@ -266,7 +266,7 @@ def _parse_defence_min_qual_str(s: str, default: str | int) -> str | int:
 
 
 def defence_ingestion_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    from ..bronze.defence_ingestion import ingest_year_range
+    from ..data_pipeline.bronze.defence_ingestion import ingest_year_range
 
     cy = current_utc_year()
     cfg = PipelineSettings.from_environ()
@@ -297,7 +297,7 @@ def defence_ingestion_handler(event: Dict[str, Any], context: Any) -> Dict[str, 
 
 
 def statcast_ingestion_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    from ..bronze.statcast_ingestion import ingest_date_range
+    from ..data_pipeline.bronze.statcast_ingestion import ingest_date_range
 
     y = yesterday_utc_date_str()
     cfg = PipelineSettings.from_environ()
@@ -336,7 +336,7 @@ def statcast_ingestion_handler(event: Dict[str, Any], context: Any) -> Dict[str,
 
 
 def statcast_running_ingestion_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    from ..bronze.statcast_running_ingestion import ingest_year_range
+    from ..data_pipeline.bronze.statcast_running_ingestion import ingest_year_range
 
     cy = current_utc_year()
     cfg = PipelineSettings.from_environ()
@@ -352,7 +352,7 @@ def statcast_running_ingestion_handler(event: Dict[str, Any], context: Any) -> D
 
 
 def silver_to_gold_preprocessing_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    from ..gold.silver_to_gold_preprocessing import build_silver_to_gold_preprocessing
+    from ..data_pipeline.gold.preprocessing import build_silver_to_gold_preprocessing
 
     cy = current_utc_year()
     cfg = PipelineSettings.from_environ()
@@ -391,7 +391,7 @@ def silver_to_gold_preprocessing_handler(event: Dict[str, Any], context: Any) ->
 
 
 def bronze_to_silver_features_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    from ..silver.bronze_to_silver_features import build_bronze_to_silver_features
+    from ..data_pipeline.silver.feature_build import build_bronze_to_silver_features
 
     y = yesterday_utc_date_str()
     cfg = PipelineSettings.from_environ()

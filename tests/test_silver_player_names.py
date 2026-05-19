@@ -1,6 +1,6 @@
 import pandas as pd
 
-from src.silver.silver_player_names import (
+from src.data_pipeline.silver.player_names import (
     build_mlbam_statcast_style_name_map,
     resolve_mlbam_display_name,
 )
