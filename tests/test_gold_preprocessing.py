@@ -76,6 +76,7 @@ def test_preprocess_role_year_df_drops_archetype_non_features():
             "year": [2024, 2024, 2024],
             "role": ["pitcher"] * 3,
             "pitch_type_FF_share": [0.5, 0.4, 0.45],
+            "pitch_type_UN_share": [0.02, 0.01, 0.03],
             "pitch_type_other_share": [0.05, 0.06, 0.04],
             "pitch_type_entropy": [1.2, 1.3, 1.25],
             "xwoba_allowed_lhb_mean": [0.3, 0.29, 0.31],
@@ -91,11 +92,14 @@ def test_preprocess_role_year_df_drops_archetype_non_features():
             near_zero_variance_unique_ratio=0.0,
         ),
     )
-    assert "pitch_type_FF_share" not in out.columns
+    # Common arsenal shares (FF/SI/SL/CH/CU/FC/ST) are now kept so clustering can
+    # see pitcher usage; rare/junk codes (UN, KN, ...) are still dropped.
+    assert "pitch_type_UN_share" not in out.columns
     assert "xwoba_allowed_lhb_mean" not in out.columns
     assert "pitch_type_entropy" in out.columns
+    assert "pitch_type_FF_share" in out.columns
     assert "pitch_type_other_share" in out.columns
-    assert "pitch_type_FF_share" in artifacts.archetype_training_dropped_columns
+    assert "pitch_type_UN_share" in artifacts.archetype_training_dropped_columns
 
 
 def test_is_column_excluded_from_archetype_training_features_keeps_ids():

@@ -8,11 +8,8 @@ import pytest
 from sklearn.datasets import make_blobs
 
 from src.ml.archetype_clustering import (
-    ARCHETYPE_CLUSTER_LABELS_BATTER,
-    ARCHETYPE_CLUSTER_LABELS_PITCHER,
     ArchetypeClusteringConfig,
     ArchetypeClusteringConfigsByRole,
-    archetype_cluster_label,
     build_gold_archetype_clustering,
     fit_archetype_clustering,
     numeric_feature_columns,
@@ -29,7 +26,7 @@ def test_numeric_feature_columns_excludes_ids_and_pitch_count():
             "role": ["batter", "batter"],
             "n_pitches_total": [100, 200],
             "swing_rate": [0.4, 0.5],
-            "contact_rate": [0.8, 0.75],
+            "whiff_rate": [0.2, 0.25],
         }
     )
     df_i = prepare_dataframe_for_archetype_clustering(df)
@@ -38,19 +35,7 @@ def test_numeric_feature_columns_excludes_ids_and_pitch_count():
     assert "player_name" not in cols
     assert "year" not in cols
     assert "n_pitches_total" not in cols
-    assert cols == ["contact_rate", "swing_rate"]
-
-
-def test_archetype_cluster_label_mappings():
-    assert len(ARCHETYPE_CLUSTER_LABELS_BATTER) == 6
-    assert len(ARCHETYPE_CLUSTER_LABELS_PITCHER) == 6
-    assert ARCHETYPE_CLUSTER_LABELS_BATTER[0] == "The Power Slugger"
-    assert ARCHETYPE_CLUSTER_LABELS_PITCHER[5] == "The High-Leverage Power Reliever"
-    assert archetype_cluster_label("batter", 3) == "The Contact Hitter"
-    assert archetype_cluster_label("pitcher", 4) == "The Groundball Specialist"
-    assert archetype_cluster_label("catcher", 0) == "The Defensive Anchor"
-    assert archetype_cluster_label("batter", 99) == "Cluster 99"
-    assert archetype_cluster_label("unknown_role", 0) == "Cluster 0"
+    assert cols == ["swing_rate", "whiff_rate"]
 
 
 def test_archetype_clustering_config_validates_mutex():
@@ -335,6 +320,10 @@ def test_build_gold_archetype_clustering_writes_artifacts(monkeypatch):
         "src.ml.archetype_clustering._write_json_to_s3",
         fake_write_json,
     )
+    monkeypatch.setattr(
+        "src.ml.archetype_clustering._build_cluster_labels_for_role_year",
+        lambda **kwargs: None,
+    )
 
     result = build_gold_archetype_clustering(
         bucket="test-bucket",
@@ -349,7 +338,12 @@ def test_build_gold_archetype_clustering_writes_artifacts(monkeypatch):
     assert result["rows_written"] == 120
     assert len(writes) == 1
     assert "player_year_archetypes.parquet" in writes[0][0]
-    assert "cluster_id" in writes[0][1].columns
+    written_cols = set(writes[0][1].columns)
+    assert "cluster_id" in written_cols
+    assert "cluster_id_secondary" in written_cols
+    assert "prob_primary" in written_cols
+    assert "prob_secondary" in written_cols
+    assert {f"prob_{k}" for k in range(3)}.issubset(written_cols)
     assert len(joblib_writes) == 1
     assert any("archetype_clustering.joblib" in k for k in joblib_writes)
     assert len(json_writes) == 1
@@ -409,6 +403,10 @@ def test_build_gold_archetype_clustering_configs_by_role_different_k(monkeypatch
         "src.ml.archetype_clustering._write_json_to_s3",
         fake_write_json,
     )
+    monkeypatch.setattr(
+        "src.ml.archetype_clustering._build_cluster_labels_for_role_year",
+        lambda **kwargs: None,
+    )
 
     result = build_gold_archetype_clustering(
         bucket="test-bucket",
@@ -433,3 +431,62 @@ def test_build_gold_archetype_clustering_configs_by_role_different_k(monkeypatch
     n_by_role = {m["role"]: m["n_clusters"] for m in metas}
     assert n_by_role["pitcher"] == 3
     assert n_by_role["batter"] == 4
+
+
+def test_fit_archetype_clustering_emits_prob_columns():
+    """`fit_archetype_clustering` returns full predict_proba columns plus top-2 summary."""
+    X, _ = make_blobs(n_samples=200, centers=4, n_features=6, random_state=42, cluster_std=0.6)
+    df = pd.DataFrame(X, columns=[f"f{i}" for i in range(6)])
+    df.insert(0, "player_id", np.arange(200))
+    df.insert(1, "player_name", [f"P, {i}" for i in range(200)])
+    df.insert(2, "year", 2024)
+    df.insert(3, "role", "batter")
+    df.insert(4, "n_pitches_total", np.arange(500, 700))
+
+    cfg = ArchetypeClusteringConfig(
+        pca_n_components=4, n_clusters=4, random_state=7, n_init=10
+    )
+    out, _meta, _bundle = fit_archetype_clustering(df, role="batter", year=2024, config=cfg)
+
+    prob_cols = [f"prob_{k}" for k in range(4)]
+    for c in prob_cols + ["prob_primary", "prob_secondary", "cluster_id_secondary"]:
+        assert c in out.columns
+
+    probs = out[prob_cols].to_numpy()
+    assert np.isfinite(probs).all()
+    assert np.allclose(probs.sum(axis=1), 1.0, atol=1e-6)
+
+    # cluster_id is argmax; cluster_id_secondary is second-argmax.
+    sorted_idx = np.argsort(-probs, axis=1)
+    assert (out["cluster_id"].to_numpy() == sorted_idx[:, 0]).all()
+    assert (out["cluster_id_secondary"].to_numpy() == sorted_idx[:, 1]).all()
+    assert (out["cluster_id"] != out["cluster_id_secondary"]).all()
+
+    # Primary >= secondary >= 0.
+    assert (out["prob_primary"] >= out["prob_secondary"]).all()
+    assert (out["prob_secondary"] >= 0).all()
+    # Top-2 columns match the chosen indices in the full vector.
+    row_idx = np.arange(len(out))
+    assert np.allclose(out["prob_primary"].to_numpy(), probs[row_idx, sorted_idx[:, 0]])
+    assert np.allclose(out["prob_secondary"].to_numpy(), probs[row_idx, sorted_idx[:, 1]])
+
+
+def test_fit_archetype_clustering_metadata_includes_soft_schema():
+    """Metadata advertises the soft-assignment schema and aggregate confidence stats."""
+    X, _ = make_blobs(n_samples=180, centers=3, n_features=5, random_state=11, cluster_std=0.7)
+    df = pd.DataFrame(X, columns=[f"f{i}" for i in range(5)])
+    df.insert(0, "player_id", np.arange(180))
+    df.insert(1, "player_name", [f"P, {i}" for i in range(180)])
+    df.insert(2, "year", 2024)
+    df.insert(3, "role", "pitcher")
+    df.insert(4, "n_pitches_total", np.arange(500, 680))
+
+    cfg = ArchetypeClusteringConfig(
+        pca_n_components=3, n_clusters=3, random_state=11, n_init=5
+    )
+    _out, meta, _bundle = fit_archetype_clustering(df, role="pitcher", year=2024, config=cfg)
+
+    assert meta["soft_assignment_schema_version"] == 1
+    assert meta["prob_columns"] == ["prob_0", "prob_1", "prob_2"]
+    assert 0.0 <= meta["mean_max_prob"] <= 1.0
+    assert 0.0 <= meta["frac_confident_p_ge_0_7"] <= 1.0

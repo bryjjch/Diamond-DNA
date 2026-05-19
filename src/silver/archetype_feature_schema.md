@@ -26,9 +26,6 @@ Computed from `description`:
 ### `whiff_flag` (both roles, pitch-derived)
 - whiff if `swing_flag` and `description` contains `swinging_strike`
 
-### `contact_flag` (both roles, pitch-derived)
-- contact if `swing_flag` and not `whiff_flag`
-
 ### `barrel_flag` (batters only)
 Computed from `launch_speed` + `launch_angle` using the default barrel definition:
 - `launch_speed >= 98 mph`
@@ -45,7 +42,6 @@ Aggression/context (batter outcomes vs this pitcher):
 - `batter_swing_rate`
 - `batter_zone_swing_rate`
 - `batter_chase_rate`
-- `batter_contact_rate`
 - `batter_whiff_rate`
 
 Command/location:
@@ -64,7 +60,7 @@ Stuff / shape:
 - `release_speed_iqr`
 - `release_spin_rate_iqr`
 - `release_extension_mean`, `release_extension_iqr`
-- `pfx_x_iqr`
+- `pfx_x_mean`, `pfx_x_iqr`
 - `pfx_z_mean`, `pfx_z_iqr`
 
 Platoon + contact profile allowed:
@@ -96,8 +92,8 @@ Approach (batter outcomes):
 - `swing_rate`
 - `zone_swing_rate`
 - `chase_rate`
-- `contact_rate`
 - `whiff_rate`
+- `walk_rate` (BB% = walks / plate appearances, including intentional walks; NA if `events` column missing)
 
 Contact quality / batted-ball metrics:
 - `launch_speed_mean`, `launch_speed_iqr`

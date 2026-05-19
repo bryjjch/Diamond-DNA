@@ -45,7 +45,9 @@ NON_CATCHER_ONLY_DEFENCE_COLUMNS: frozenset[str] = frozenset(
     }
 )
 
-# Pitch-type share columns dropped for archetype training (arsenal summarized by pitch_type_entropy).
+# Pitch-type share columns dropped for archetype training. The common arsenal
+# shares (FF/SI/SL/CH/CU/FC/ST) are kept so clustering can distinguish pitcher
+# archetypes by usage; rare/junk codes are still summarized by pitch_type_entropy.
 PITCH_TYPE_SHARE_CODES_EXCLUDED: frozenset[str] = frozenset(
     {
         "UN",
@@ -57,15 +59,8 @@ PITCH_TYPE_SHARE_CODES_EXCLUDED: frozenset[str] = frozenset(
         "SC",
         "FO",
         "KN",
-        "CH",
-        "CU",
-        "FC",
-        "FF",
         "FS",
         "KC",
-        "SI",
-        "SL",
-        "ST",
         "SV",
     }
 )

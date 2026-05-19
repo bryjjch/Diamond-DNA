@@ -24,6 +24,7 @@ from ..gold.silver_to_gold_preprocessing import ID_COLUMNS
 from ..pipeline.s3_interaction import (
     get_s3_client,
     gold_archetype_assignments_key,
+    gold_archetype_cluster_labels_key,
     gold_archetype_clustering_metadata_key,
     gold_archetype_clustering_model_key,
     gold_player_year_output_key,
@@ -44,50 +45,16 @@ ARCHETYPE_CLUSTER_INDEX: tuple[str, ...] = (
     "n_pitches_total",
 )
 
-# Display names for cluster_id 0..5 in the canonical six-component GMM archetypes.
-ARCHETYPE_CLUSTER_LABELS_BATTER: Dict[int, str] = {
-    0: "The Power Slugger",
-    1: "The Backstop",
-    2: "The Soft-Tossing Utility",
-    3: "The Contact Hitter",
-    4: "The Elite Glove/Speedster",
-    5: "The Cannon Arm/Free-Swinger",
-}
-ARCHETYPE_CLUSTER_LABELS_PITCHER: Dict[int, str] = {
-    0: "The Finesse Artist",
-    1: "The Power Starter",
-    2: "The Flyballer",
-    3: "The Deception Specialist",
-    4: "The Groundball Specialist",
-    5: "The High-Leverage Power Reliever",
-}
-ARCHETYPE_CLUSTER_LABELS_CATCHER: Dict[int, str] = {
-    0: "The Defensive Anchor",
-    1: "The Pitch Framer",
-    2: "The Power-Hitting Catcher",
-    3: "The Contact Backstop",
-}
-ARCHETYPE_CLUSTER_LABELS_BY_ROLE: Dict[str, Dict[int, str]] = {
-    "batter": ARCHETYPE_CLUSTER_LABELS_BATTER,
-    "pitcher": ARCHETYPE_CLUSTER_LABELS_PITCHER,
-    "catcher": ARCHETYPE_CLUSTER_LABELS_CATCHER,
-}
-
 VALID_ROLES: Tuple[str, ...] = ("batter", "pitcher", "catcher")
 
-
-def archetype_cluster_label(role: str, cluster_id: int) -> str:
-    """
-    Map ``cluster_id`` to a human-readable archetype name for the standard six-cluster run.
-
-    If ``role`` is not ``batter``/``pitcher``, or ``cluster_id`` is outside the defined table,
-    returns a generic label of the form ``Cluster <id>`` (after normalizing ``role`` to lowercase).
-    """
-    r = role.strip().lower()
-    table = ARCHETYPE_CLUSTER_LABELS_BY_ROLE.get(r)
-    if table is None:
-        return f"Cluster {int(cluster_id)}"
-    return table.get(int(cluster_id), f"Cluster {int(cluster_id)}")
+# Production defaults for per-role (pca_n_components, n_clusters), applied by the
+# CLI and Lambda handler when the caller does not supply PCA dimensionality or
+# cluster count. Tuned in notebooks/clustering_gmm_experimentation.ipynb.
+DEFAULT_ROLE_HYPERPARAMS: Mapping[str, Mapping[str, int]] = {
+    "pitcher": {"pca_n_components": 13, "n_clusters": 4},
+    "batter": {"pca_n_components": 4, "n_clusters": 5},
+    "catcher": {"pca_n_components": 4, "n_clusters": 3},
+}
 
 
 def prepare_dataframe_for_archetype_clustering(df: pd.DataFrame) -> pd.DataFrame:
@@ -378,6 +345,11 @@ def fit_archetype_clustering(
     )
     gmm.fit(X_pca)
     labels = gmm.predict(X_pca)
+    probs = gmm.predict_proba(X_pca)
+    top2_idx = np.argsort(-probs, axis=1)[:, :2]
+    row_idx = np.arange(probs.shape[0])
+    prob_primary = probs[row_idx, top2_idx[:, 0]]
+    prob_secondary = probs[row_idx, top2_idx[:, 1]]
 
     sil = float("nan")
     if n_clusters >= 2 and n_samples > n_clusters:
@@ -396,6 +368,11 @@ def fit_archetype_clustering(
 
     out = df_work.reset_index()
     out["cluster_id"] = labels.astype(np.int64)
+    out["cluster_id_secondary"] = top2_idx[:, 1].astype(np.int64)
+    out["prob_primary"] = prob_primary.astype(np.float64)
+    out["prob_secondary"] = prob_secondary.astype(np.float64)
+    for k in range(n_clusters):
+        out[f"prob_{k}"] = probs[:, k].astype(np.float64)
 
     feature_hash = hashlib.sha256(",".join(feature_cols).encode()).hexdigest()[:16]
 
@@ -427,6 +404,10 @@ def fit_archetype_clustering(
         "gmm_lower_bound": gmm_lower_bound,
         "silhouette_score": sil,
         "davies_bouldin_score": db,
+        "soft_assignment_schema_version": 1,
+        "prob_columns": [f"prob_{k}" for k in range(n_clusters)],
+        "mean_max_prob": float(prob_primary.mean()),
+        "frac_confident_p_ge_0_7": float((prob_primary >= 0.7).mean()),
         "random_state": config.random_state,
         "n_init": config.n_init,
         "sklearn_version": sklearn.__version__,
@@ -465,6 +446,29 @@ def _write_joblib_to_s3(bundle: Dict[str, Any], bucket: str, key: str) -> None:
         Key=key,
         Body=buf.getvalue(),
         ContentType="application/octet-stream",
+    )
+
+
+def _build_cluster_labels_for_role_year(
+    *,
+    labeled: pd.DataFrame,
+    role: str,
+    year: int,
+    feature_cols: Sequence[str],
+    bucket: str,
+    gold_prefix: str,
+) -> Dict[str, Any]:
+    """Defer the import so the labeling module (and Gemini SDK) is only loaded when needed."""
+    from .archetype_labeling import build_cluster_labels
+
+    labels_key = gold_archetype_cluster_labels_key(gold_prefix, role, year)
+    return build_cluster_labels(
+        labeled,
+        role=role,
+        year=year,
+        feature_cols=feature_cols,
+        bucket=bucket,
+        key=labels_key,
     )
 
 
@@ -587,6 +591,23 @@ def build_gold_archetype_clustering(
             # Write the archetype clustering metadata to S3.
             meta_key = gold_archetype_clustering_metadata_key(gold_prefix, role, year)
             _write_json_to_s3(bucket, meta_key, metadata)
+
+            # Generate + write the cluster_labels.json sidecar (Gemini). A failure here
+            # must not break the parquet/joblib/metadata writes already on disk; the
+            # API loader falls back to "Cluster N" when the sidecar is absent.
+            try:
+                _build_cluster_labels_for_role_year(
+                    labeled=labeled,
+                    role=role,
+                    year=year,
+                    feature_cols=metadata["feature_columns"],
+                    bucket=bucket,
+                    gold_prefix=gold_prefix,
+                )
+            except Exception as exc:
+                msg = f"role={role} year={year}: label generation failed: {exc}"
+                logger.warning("Cluster labelling skipped: %s", msg)
+                errors.append(msg)
 
             # Update counters.
             n = int(len(labeled))
