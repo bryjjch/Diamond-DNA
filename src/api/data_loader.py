@@ -268,7 +268,6 @@ def clusters_payload(df: pd.DataFrame, labels: ClusterLabelLookup) -> List[Dict[
         raise ValueError(f"archetypes frame missing columns: {sorted(missing)}")
 
     soft = _has_soft(df)
-    prob_cols = _prob_cols(df) if soft else []
 
     out: List[Dict[str, Any]] = []
     for (role, cid), g in df.sort_values(["role", "cluster_id", "player_name"]).groupby(
@@ -288,7 +287,6 @@ def clusters_payload(df: pd.DataFrame, labels: ClusterLabelLookup) -> List[Dict[
                 entry["cluster_id_secondary"] = sec_cid
                 entry["prob_secondary"] = float(rw["prob_secondary"])
                 entry["secondary_label"] = cluster_label(labels, r, sec_cid)
-                entry["probs"] = [float(rw[c]) for c in prob_cols]
             players.append(entry)
         out.append(
             {

@@ -123,7 +123,7 @@ def test_clusters_payload_includes_soft_fields_when_present():
     assert alpha["cluster_id_secondary"] == 2
     assert alpha["prob_secondary"] == 0.15
     assert alpha["secondary_label"] == "The Speedster"
-    assert alpha["probs"] == [0.80, 0.05, 0.15]
+    assert "probs" not in alpha
 
 
 def test_clusters_payload_omits_soft_fields_on_legacy_frame():
