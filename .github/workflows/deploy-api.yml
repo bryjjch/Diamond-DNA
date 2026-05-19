@@ -1,7 +1,6 @@
 # Build the API Lambda container, push to ECR, and roll the Lambda over to the
 # new image. Triggers when the API code, its docker image, or this workflow
-# changes — the Flask shim under src/api/local_server.py is excluded since it
-# only runs locally.
+# changes.
 #
 # Required repo configuration:
 #   vars.AWS_REGION              e.g. us-east-1
