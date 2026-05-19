@@ -43,7 +43,8 @@ def compute_cluster_profiles(
 
     The z-score is ``(cluster_mean - global_mean) / global_std``, computed against
     the whole role/year frame so the LLM sees how each cluster deviates from league
-    baseline. Features with zero variance are dropped (z-score is undefined).
+    baseline. Features with zero variance are retained with a ``z_score`` of ``0.0``
+    to avoid divide-by-zero, and may therefore appear in the ``top_n`` results.
     """
     if "cluster_id" not in labeled_df.columns:
         raise ValueError("labeled_df must contain a 'cluster_id' column.")
