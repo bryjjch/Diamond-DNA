@@ -5,6 +5,7 @@ import type {
   NeighborsResponse,
   Role,
   SearchResponse,
+  SoftProfileResponse,
 } from "./types";
 
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
@@ -48,4 +49,6 @@ export const api = {
     request<LeaderboardResponse>("/api/leaderboard", { role, limit }),
   neighbors: (role: Role, playerId: number) =>
     request<NeighborsResponse>("/api/neighbors", { role, player_id: playerId }),
+  playerSoftProfile: (role: Role, playerId: number) =>
+    request<SoftProfileResponse>("/api/player_soft_profile", { role, player_id: playerId }),
 };

@@ -15,12 +15,17 @@ export interface MetaResponse {
 export interface ClusterPlayer {
   player_id: number;
   player_name: string;
+  prob_primary?: number;
+  cluster_id_secondary?: number;
+  prob_secondary?: number;
+  secondary_label?: string;
 }
 
 export interface Cluster {
   role: Role;
   cluster_id: number;
   label: string;
+  description?: string;
   players: ClusterPlayer[];
 }
 
@@ -36,6 +41,34 @@ export interface SearchHit {
   year: number | null;
   cluster_id: number;
   cluster_label: string;
+  prob_primary?: number;
+  prob_secondary?: number;
+  secondary_cluster_label?: string;
+}
+
+export interface SoftProb {
+  cluster_id: number;
+  label: string;
+  prob: number;
+}
+
+export interface SoftProfile {
+  player_id: number;
+  player_name: string;
+  role: Role;
+  cluster_id: number;
+  cluster_label: string;
+  probs: SoftProb[];
+}
+
+export interface SoftProfileResponse {
+  ok: true;
+  player_id: number;
+  player_name: string;
+  role: Role;
+  cluster_id: number;
+  cluster_label: string;
+  probs: SoftProb[];
 }
 
 export interface SearchResponse {

@@ -6,20 +6,38 @@ import { Tag } from "primereact/tag";
 import { ProgressSpinner } from "primereact/progressspinner";
 import { Skeleton } from "primereact/skeleton";
 import { api } from "@/lib/api";
-import type { Cluster, Role, SearchHit } from "@/lib/types";
+import type { Cluster, ClusterPlayer, Role, SearchHit } from "@/lib/types";
 import { useDebouncedValue } from "@/lib/utils";
 import { SearchInput } from "@/components/SearchInput";
 import { ErrorBanner } from "@/components/ErrorBanner";
+import { SoftProfileModal } from "@/components/SoftProfileModal";
 
 const ROLE_META: Record<Role, { title: string; icon: string }> = {
   batter: { title: "Batters", icon: "pi pi-bullseye" },
   pitcher: { title: "Pitchers", icon: "pi pi-send" },
 };
 
+const ROLE_TONE: Record<Role, string> = {
+  batter: "var(--color-accent)",
+  pitcher: "#0ea5e9",
+};
+
+function probBadgeStyle(prob: number, tone: string): React.CSSProperties {
+  if (prob >= 0.7) return { background: `color-mix(in srgb, ${tone} 14%, transparent)`, color: tone };
+  if (prob >= 0.5) return { background: "color-mix(in srgb, #f59e0b 14%, transparent)", color: "#b45309" };
+  return { background: "color-mix(in srgb, currentColor 8%, transparent)", color: "var(--p-text-muted-color, #6b7280)" };
+}
+
+interface SelectedPlayer {
+  id: number;
+  role: Role;
+}
+
 export function ClusterBrowser() {
   const [query, setQuery] = useState("");
   const debouncedQuery = useDebouncedValue(query, 200);
   const queryNorm = query.trim().toLowerCase();
+  const [selectedPlayer, setSelectedPlayer] = useState<SelectedPlayer | null>(null);
 
   const clustersQuery = useQuery({
     queryKey: ["clusters"],
@@ -90,6 +108,7 @@ export function ClusterBrowser() {
           query={debouncedQuery.trim()}
           results={searchQuery.data?.results ?? []}
           isLoading={searchQuery.isLoading}
+          onPlayerClick={(id, role) => setSelectedPlayer({ id, role })}
         />
       )}
 
@@ -101,9 +120,18 @@ export function ClusterBrowser() {
             clusters={grouped[role]}
             queryNorm={queryNorm}
             loading={clustersQuery.isLoading}
+            onPlayerClick={(id) => setSelectedPlayer({ id, role })}
           />
         ))}
       </div>
+
+      {selectedPlayer && (
+        <SoftProfileModal
+          playerId={selectedPlayer.id}
+          role={selectedPlayer.role}
+          onClose={() => setSelectedPlayer(null)}
+        />
+      )}
     </section>
   );
 }
@@ -183,10 +211,12 @@ function SearchResultsPanel({
   query,
   results,
   isLoading,
+  onPlayerClick,
 }: {
   query: string;
   results: SearchHit[];
   isLoading: boolean;
+  onPlayerClick: (id: number, role: Role) => void;
 }) {
   return (
     <Card>
@@ -212,22 +242,42 @@ function SearchResultsPanel({
       )}
       {!isLoading && results.length > 0 && (
         <ul className="m-0 grid list-none grid-cols-1 gap-1 p-0 sm:grid-cols-2">
-          {results.map((r) => (
-            <li
-              key={`${r.role}-${r.player_id}`}
-              className="flex items-center justify-between gap-3 rounded-md border border-line bg-[color:var(--color-surface-alt)] px-3 py-2 text-sm"
-            >
-              <div className="min-w-0">
-                <p className="m-0 truncate font-medium">{r.player_name}</p>
-                <p className="m-0 truncate text-xs text-muted">{r.cluster_label}</p>
-              </div>
-              <Tag
-                value={r.role}
-                severity={r.role === "batter" ? "success" : "info"}
-                rounded
-              />
-            </li>
-          ))}
+          {results.map((r) => {
+            const tone = ROLE_TONE[r.role];
+            const pct = r.prob_primary !== undefined ? Math.round(r.prob_primary * 100) : null;
+            return (
+              <li
+                key={`${r.role}-${r.player_id}`}
+                className="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-line bg-[color:var(--color-surface-alt)] px-3 py-2 text-sm hover:bg-[color:var(--color-surface-hover,var(--color-surface-alt))]"
+                onClick={() => onPlayerClick(r.player_id, r.role)}
+              >
+                <div className="min-w-0">
+                  <p className="m-0 truncate font-medium">{r.player_name}</p>
+                  <p className="m-0 truncate text-xs text-muted">{r.cluster_label}</p>
+                  {r.secondary_cluster_label && pct !== null && pct < 70 && (
+                    <p className="m-0 truncate text-xs text-muted">
+                      also fits: {r.secondary_cluster_label}
+                    </p>
+                  )}
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  {pct !== null && (
+                    <span
+                      className="rounded px-1.5 py-0.5 text-[11px] font-semibold tabular-nums"
+                      style={probBadgeStyle(r.prob_primary!, tone)}
+                    >
+                      {pct}%
+                    </span>
+                  )}
+                  <Tag
+                    value={r.role}
+                    severity={r.role === "batter" ? "success" : "info"}
+                    rounded
+                  />
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
     </Card>
@@ -239,13 +289,16 @@ function RoleColumn({
   clusters,
   queryNorm,
   loading,
+  onPlayerClick,
 }: {
   role: Role;
   clusters: Cluster[];
   queryNorm: string;
   loading: boolean;
+  onPlayerClick: (id: number) => void;
 }) {
   const meta = ROLE_META[role];
+  const tone = ROLE_TONE[role];
   const visible = queryNorm
     ? clusters.filter((c) =>
         c.players.some((p) => p.player_name.toLowerCase().includes(queryNorm)),
@@ -296,24 +349,32 @@ function RoleColumn({
               <AccordionTab
                 key={cluster.cluster_id}
                 header={
-                  <div className="flex w-full items-center justify-between gap-2 pr-2">
-                    <span className="truncate font-medium">{cluster.label}</span>
-                    <Tag
-                      value={filtered.length}
-                      severity={queryNorm ? "success" : undefined}
-                      rounded
-                    />
+                  <div className="flex w-full flex-col gap-0.5 pr-2">
+                    <div className="flex w-full items-center justify-between gap-2">
+                      <span className="truncate font-medium">{cluster.label}</span>
+                      <Tag
+                        value={filtered.length}
+                        severity={queryNorm ? "success" : undefined}
+                        rounded
+                      />
+                    </div>
+                    {cluster.description && (
+                      <p className="m-0 text-xs font-normal text-muted line-clamp-2">
+                        {cluster.description}
+                      </p>
+                    )}
                   </div>
                 }
               >
                 <ul className="m-0 grid max-h-72 list-none grid-cols-1 gap-x-4 overflow-y-auto p-0 text-sm sm:grid-cols-2">
                   {filtered.map((p) => (
-                    <li
+                    <PlayerRow
                       key={p.player_id}
-                      className="border-b border-line py-1.5 last:border-b-0"
-                    >
-                      {highlight(p.player_name, queryNorm)}
-                    </li>
+                      player={p}
+                      queryNorm={queryNorm}
+                      tone={tone}
+                      onClick={() => onPlayerClick(p.player_id)}
+                    />
                   ))}
                 </ul>
               </AccordionTab>
@@ -322,6 +383,50 @@ function RoleColumn({
         </Accordion>
       )}
     </Card>
+  );
+}
+
+function PlayerRow({
+  player,
+  queryNorm,
+  tone,
+  onClick,
+}: {
+  player: ClusterPlayer;
+  queryNorm: string;
+  tone: string;
+  onClick: () => void;
+}) {
+  const hasSoft = player.prob_primary !== undefined;
+  const pct = hasSoft ? Math.round(player.prob_primary! * 100) : null;
+  const showSecondary =
+    hasSoft && player.prob_primary! < 0.7 && player.secondary_label;
+  const secPct = player.prob_secondary !== undefined
+    ? Math.round(player.prob_secondary * 100)
+    : null;
+
+  return (
+    <li
+      className="cursor-pointer border-b border-line py-1.5 last:border-b-0 hover:bg-[color:var(--color-surface-alt)]"
+      onClick={onClick}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="min-w-0 truncate">{highlight(player.player_name, queryNorm)}</span>
+        {pct !== null && (
+          <span
+            className="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold tabular-nums"
+            style={probBadgeStyle(player.prob_primary!, tone)}
+          >
+            {pct}%
+          </span>
+        )}
+      </div>
+      {showSecondary && (
+        <p className="m-0 mt-0.5 truncate text-[11px] text-muted">
+          + {secPct}% {player.secondary_label}
+        </p>
+      )}
+    </li>
   );
 }
 
