@@ -26,9 +26,9 @@ logger = logging.getLogger(__name__)
 
 _ROLES = ("batter", "pitcher", "catcher")
 
-# Mapping: role -> {cluster_id -> display label}. Empty dict means "no LLM labels
-# were generated for this role/year"; the lookup helper falls back to "Cluster N".
-ClusterLabelLookup = Dict[str, Dict[int, str]]
+# Mapping: role -> {cluster_id -> {"name": str, "description": str}}.
+# Empty dict means "no LLM labels were generated for this role/year"; helpers fall back gracefully.
+ClusterLabelLookup = Dict[str, Dict[int, Dict[str, str]]]
 
 _SOFT_REQUIRED = frozenset({"prob_primary", "prob_secondary", "cluster_id_secondary"})
 
@@ -63,12 +63,23 @@ class LakeTables:
 def cluster_label(labels: ClusterLabelLookup, role: str, cluster_id: int) -> str:
     """Look up a role/cluster label from the sidecar, falling back to ``Cluster <id>``."""
     r = role.strip().lower()
-    table = labels.get(r) or {}
-    return table.get(int(cluster_id), f"Cluster {int(cluster_id)}")
+    entry = (labels.get(r) or {}).get(int(cluster_id))
+    if isinstance(entry, dict):
+        return entry.get("name") or f"Cluster {int(cluster_id)}"
+    return f"Cluster {int(cluster_id)}"
 
 
-def _parse_cluster_labels_json(raw: bytes, role: str) -> Dict[int, str]:
-    """Parse a ``cluster_labels.json`` payload into ``{cluster_id: display_label}``."""
+def cluster_description(labels: ClusterLabelLookup, role: str, cluster_id: int) -> str:
+    """Look up a role/cluster description from the sidecar, returning empty string on miss."""
+    r = role.strip().lower()
+    entry = (labels.get(r) or {}).get(int(cluster_id))
+    if isinstance(entry, dict):
+        return entry.get("description") or ""
+    return ""
+
+
+def _parse_cluster_labels_json(raw: bytes, role: str) -> Dict[int, Dict[str, str]]:
+    """Parse a ``cluster_labels.json`` payload into ``{cluster_id: {name, description}}``."""
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:
@@ -78,7 +89,7 @@ def _parse_cluster_labels_json(raw: bytes, role: str) -> Dict[int, str]:
     if not isinstance(entries, dict):
         logger.warning("cluster_labels.json for role=%s missing 'labels' object", role)
         return {}
-    out: Dict[int, str] = {}
+    out: Dict[int, Dict[str, str]] = {}
     for k, v in entries.items():
         try:
             cid = int(k)
@@ -87,9 +98,12 @@ def _parse_cluster_labels_json(raw: bytes, role: str) -> Dict[int, str]:
         if isinstance(v, dict):
             name = str(v.get("name", "")).strip()
             if name:
-                out[cid] = name
+                out[cid] = {
+                    "name": name,
+                    "description": str(v.get("description", "")).strip(),
+                }
         elif isinstance(v, str) and v.strip():
-            out[cid] = v.strip()
+            out[cid] = {"name": v.strip(), "description": ""}
     return out
 
 
@@ -288,14 +302,16 @@ def clusters_payload(df: pd.DataFrame, labels: ClusterLabelLookup) -> List[Dict[
                 entry["prob_secondary"] = float(rw["prob_secondary"])
                 entry["secondary_label"] = cluster_label(labels, r, sec_cid)
             players.append(entry)
-        out.append(
-            {
-                "role": r,
-                "cluster_id": cid_i,
-                "label": cluster_label(labels, r, cid_i),
-                "players": players,
-            }
-        )
+        desc = cluster_description(labels, r, cid_i)
+        cluster_entry: Dict[str, Any] = {
+            "role": r,
+            "cluster_id": cid_i,
+            "label": cluster_label(labels, r, cid_i),
+            "players": players,
+        }
+        if desc:
+            cluster_entry["description"] = desc
+        out.append(cluster_entry)
     return out
 
 
@@ -316,7 +332,6 @@ def search_players(
     mask = df["player_name"].str.lower().str.contains(qn, na=False)
     sub = df.loc[mask].sort_values("player_name").head(limit)
     soft = _has_soft(df)
-    prob_cols = _prob_cols(df) if soft else []
     rows: List[Dict[str, Any]] = []
     for _, rw in sub.iterrows():
         role = str(rw["role"])
@@ -334,10 +349,8 @@ def search_players(
         if soft:
             sec_cid = int(rw["cluster_id_secondary"])
             row["prob_primary"] = float(rw["prob_primary"])
-            row["cluster_id_secondary"] = sec_cid
             row["prob_secondary"] = float(rw["prob_secondary"])
             row["secondary_cluster_label"] = cluster_label(labels, role, sec_cid)
-            row["probs"] = [float(rw[c]) for c in prob_cols]
         rows.append(row)
     return rows
 
