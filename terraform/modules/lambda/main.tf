@@ -237,10 +237,11 @@ resource "aws_lambda_function" "statcast_ingestion" {
 
   environment {
     variables = {
-      S3_BUCKET          = var.data_lake_bucket_name
-      S3_PREFIX          = var.s3_prefix
-      RAW_RUNNING_PREFIX = var.raw_running_s3_prefix
-      RAW_DEFENCE_PREFIX = var.raw_defence_s3_prefix
+      S3_BUCKET           = var.data_lake_bucket_name
+      S3_PREFIX           = var.s3_prefix
+      RAW_RUNNING_PREFIX  = var.raw_running_s3_prefix
+      RAW_DEFENCE_PREFIX  = var.raw_defence_s3_prefix
+      PYBASEBALL_NO_CACHE = "true"
     }
   }
 
