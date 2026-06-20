@@ -24,8 +24,12 @@ ALL_SOURCES = ("statcast", "running", "defence")
 
 
 def _year_from_date_str(date_str: str) -> int:
-    return int(str(date_str).strip()[:4])
+    from datetime import datetime
 
+    try:
+        return datetime.strptime(str(date_str).strip(), "%Y-%m-%d").year
+    except ValueError as exc:
+        raise ValueError(f"Invalid date {date_str!r}; expected YYYY-MM-DD") from exc
 
 def ingest_all_bronze(
     *,
