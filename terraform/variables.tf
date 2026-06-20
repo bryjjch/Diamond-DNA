@@ -22,6 +22,19 @@ variable "data_lake_bucket_name" {
   type        = string
 }
 
+# S3 Replication (gold/ -> MLB-Market-Simulator raw-data bucket)
+variable "replication_destination_bucket_arn" {
+  description = "ARN of the MLB-Market-Simulator raw-data bucket that gold/ objects replicate into. Leave empty to disable replication."
+  type        = string
+  default     = ""
+}
+
+variable "replication_prefix" {
+  description = "Object key prefix replicated to the destination bucket."
+  type        = string
+  default     = "gold/"
+}
+
 # S3 Prefixes
 variable "statcast_ingestion_s3_prefix" {
   description = "S3 prefix for bronze Statcast pitch data (e.g. bronze/statcast)"

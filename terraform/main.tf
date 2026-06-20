@@ -11,6 +11,11 @@ module "s3" {
   source = "./modules/s3"
 
   data_lake_bucket_name = var.data_lake_bucket_name
+  name_prefix           = var.name_prefix
+
+  # Replicate gold/ to the MLB-Market-Simulator raw-data bucket. Empty disables it.
+  replication_destination_bucket_arn = var.replication_destination_bucket_arn
+  replication_prefix                 = var.replication_prefix
 
   tags = var.tags
 }
