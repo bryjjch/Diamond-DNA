@@ -242,6 +242,7 @@ resource "aws_lambda_function" "statcast_ingestion" {
       RAW_RUNNING_PREFIX  = var.raw_running_s3_prefix
       RAW_DEFENCE_PREFIX  = var.raw_defence_s3_prefix
       PYBASEBALL_NO_CACHE = "true"
+      HOME                = "/tmp"
     }
   }
 
