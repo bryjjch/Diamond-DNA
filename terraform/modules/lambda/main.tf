@@ -120,6 +120,24 @@ resource "aws_iam_role_policy" "silver_feature_build_s3_access" {
       {
         Effect = "Allow"
         Action = [
+          "s3:ListBucket"
+        ]
+        Resource = var.data_lake_bucket_arn
+        Condition = {
+          StringLike = {
+            "s3:prefix" = [
+              "${var.s3_prefix}/*",
+              "${var.raw_running_s3_prefix}/*",
+              "${var.raw_defence_s3_prefix}/*",
+              "${var.silver_s3_prefix}/*",
+              "${var.gold_s3_prefix}/*",
+            ]
+          }
+        }
+      },
+      {
+        Effect = "Allow"
+        Action = [
           "s3:GetObject"
         ]
         Resource = [
@@ -182,6 +200,21 @@ resource "aws_iam_role_policy" "gold_preprocessing_s3_access" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:ListBucket"
+        ]
+        Resource = var.data_lake_bucket_arn
+        Condition = {
+          StringLike = {
+            "s3:prefix" = [
+              "${var.silver_s3_prefix}/*",
+              "${var.gold_s3_prefix}/*",
+            ]
+          }
+        }
+      },
       {
         Effect = "Allow"
         Action = [
