@@ -20,7 +20,7 @@ module "s3" {
 # LAMBDA MODULE (bronze ingestion + silver feature build + gold preprocessing)
 # ============================================================================
 # Three Lambdas, each with its own container image:
-# - statcast-ingestion:   bronze pitch ingest    → src.data_pipeline.bronze.statcast_ingestion
+# - statcast-ingestion:   all bronze ingest      → src.data_pipeline.bronze.bronze_ingestion (statcast + running + defence)
 # - silver-feature-build: silver feature build   → src.data_pipeline.silver.feature_build (YTD bronze → silver)
 # - gold-preprocessing:   gold preprocessing     → src.data_pipeline.gold.preprocessing (silver → gold)
 module "lambda" {

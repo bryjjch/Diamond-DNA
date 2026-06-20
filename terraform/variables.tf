@@ -68,9 +68,9 @@ variable "statcast_ingestion_memory_size" {
 }
 
 variable "statcast_ingestion_timeout" {
-  description = "Lambda timeout in seconds for bronze Statcast pitch ingestion"
+  description = "Lambda timeout in seconds for bronze ingestion (statcast + running + defence run serially)"
   type        = number
-  default     = 300
+  default     = 900
 }
 
 # Lambda memory and timeout: silver feature build

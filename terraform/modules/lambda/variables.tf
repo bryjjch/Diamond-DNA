@@ -68,9 +68,9 @@ variable "memory_size" {
 }
 
 variable "timeout" {
-  description = "Lambda timeout in seconds for bronze ingestion"
+  description = "Lambda timeout in seconds for bronze ingestion (statcast + running + defence run serially)"
   type        = number
-  default     = 300
+  default     = 900
 }
 
 variable "silver_memory_size" {
