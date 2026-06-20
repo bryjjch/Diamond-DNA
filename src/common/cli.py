@@ -410,6 +410,100 @@ def run_statcast_running_ingestion_main() -> None:
     logger.info(result["message"])
 
 
+def run_bronze_ingestion_main() -> None:
+    from ..data_pipeline.bronze.bronze_ingestion import ALL_SOURCES, ingest_all_bronze
+
+    cfg = PipelineSettings.from_environ()
+    yesterday = yesterday_utc_date_str()
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run all bronze ingestion sources (statcast pitches, sprint-speed running, "
+            "defence) in one call. Statcast uses the date range; running/defence use the "
+            "year range, which defaults to the years spanned by the date range."
+        )
+    )
+    parser.add_argument("--start-date", type=str, default=yesterday)
+    parser.add_argument("--end-date", type=str, default=yesterday)
+    parser.add_argument(
+        "--start-year",
+        type=int,
+        default=None,
+        help="Running/defence start year (default: year of --start-date).",
+    )
+    parser.add_argument(
+        "--end-year",
+        type=int,
+        default=None,
+        help="Running/defence end year (default: year of --end-date).",
+    )
+    parser.add_argument("--s3-bucket", type=str, default=cfg.s3_bucket)
+    parser.add_argument("--statcast-prefix", type=str, default=cfg.raw_statcast_prefix)
+    parser.add_argument("--running-prefix", type=str, default=cfg.raw_running_prefix)
+    parser.add_argument("--defence-prefix", type=str, default=cfg.raw_defence_prefix)
+    parser.add_argument(
+        "--sources",
+        type=str,
+        default=",".join(ALL_SOURCES),
+        help="Comma-separated subset of sources to run (statcast,running,defence).",
+    )
+    # running tuning
+    parser.add_argument("--min-opp", type=int, default=10)
+    # defence tuning
+    parser.add_argument(
+        "--oaa-min-att",
+        type=str,
+        default="q",
+        help='Statcast OAA minimum attempts: "q" (qualified) or an integer.',
+    )
+    parser.add_argument("--arm-min-throws", type=int, default=50)
+    parser.add_argument("--framing-min-called", type=str, default="q")
+    parser.add_argument("--pop-min-2b", type=int, default=5)
+    parser.add_argument("--pop-min-3b", type=int, default=0)
+    parser.add_argument("--fangraphs-qual", type=int, default=None)
+    args = parser.parse_args()
+
+    sources = [s.strip() for s in args.sources.split(",") if s.strip()]
+
+    oaa_min: str | int = args.oaa_min_att
+    if oaa_min != "q" and str(oaa_min).isdigit():
+        oaa_min = int(oaa_min)
+
+    framing_min: str | int = args.framing_min_called
+    if framing_min != "q" and str(framing_min).isdigit():
+        framing_min = int(framing_min)
+
+    result = ingest_all_bronze(
+        s3_bucket=args.s3_bucket,
+        statcast_prefix=args.statcast_prefix,
+        running_prefix=args.running_prefix,
+        defence_prefix=args.defence_prefix,
+        start_date_str=args.start_date,
+        end_date_str=args.end_date,
+        start_year=args.start_year,
+        end_year=args.end_year,
+        sources=sources,
+        min_opp=args.min_opp,
+        oaa_min_att=oaa_min,
+        arm_min_throws=args.arm_min_throws,
+        framing_min_called=framing_min,
+        pop_min_2b=args.pop_min_2b,
+        pop_min_3b=args.pop_min_3b,
+        fangraphs_qual=args.fangraphs_qual,
+    )
+
+    if result["status"] == "error":
+        logger.error(result["message"])
+        for err in result.get("errors", []):
+            logger.error(err)
+        raise SystemExit(1)
+    if result["status"] == "partial":
+        logger.warning(result["message"])
+        for err in result.get("errors", []):
+            logger.warning(err)
+        raise SystemExit(1)
+    logger.info(result["message"])
+
+
 def run_silver_to_gold_preprocessing_main() -> None:
     from ..data_pipeline.gold.preprocessing import build_silver_to_gold_preprocessing
 
