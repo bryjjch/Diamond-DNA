@@ -1,1 +1,1 @@
-"""Diamond-DNA source package."""
+"""xWAR Engine source package."""

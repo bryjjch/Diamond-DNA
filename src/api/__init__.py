@@ -1,1 +1,1 @@
-"""HTTP API Lambda for the Diamond-DNA cluster browser and KNN service."""
+"""HTTP API Lambda for the xWAR Engine cluster browser and KNN service."""

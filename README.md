@@ -1,7 +1,24 @@
-# Diamond-DNA
+# xWAR Engine
 
-Player archetype clustering for the MLB using Gaussian Mixture Models, served
-as a cloud-native web app.
+MLB player performance projections, served as a cloud-native web app.
+Formerly **Diamond-DNA**, a player archetype clustering project — the
+archetype (GMM) and similarity (KNN) models live on as the comparables
+engine behind the projections.
+
+## Revamping
+
+This project is transitioning from archetype clustering (Diamond-DNA) to
+player performance projections (xWAR Engine). Many existing features carry
+over. Projections will start with next-season projections; rest-of-season
+projections could come later as a V2. Target stats:
+
+Batters: PA, AVG/OBP/SLG, wOBA, HR, SB, K%, BB%
+Pitchers: IP, ERA, FIP, K%, BB%, WHIP
+
+The repo, docs, and frontend are rebranded to xWAR Engine. AWS resources
+(S3 bucket, Lambdas, ECR repos) still carry legacy `diamond-dna` names —
+AWS does not allow renaming, so those will be replaced when the
+architecture is rebuilt for projections.
 
 ## Architecture
 
@@ -40,7 +57,8 @@ as a cloud-native web app.
 
 ## Data pipeline
 
-Three Lambdas run daily on EventBridge:
+Three Lambdas run daily on EventBridge (legacy `diamond-dna-*` resource
+names, see [Revamping](#revamping)):
 
 | Time UTC | Lambda                   | Reads             | Writes              |
 | -------- | ------------------------ | ----------------- | ------------------- |

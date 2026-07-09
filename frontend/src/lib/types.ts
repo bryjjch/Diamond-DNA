@@ -1,4 +1,4 @@
-// Shapes returned by the Diamond-DNA HTTP API (src/api/handler.py).
+// Shapes returned by the xWAR Engine HTTP API (src/api/handler.py).
 // Keep aligned with the Python response bodies — any drift here breaks the UI.
 
 export type Role = "batter" | "pitcher";

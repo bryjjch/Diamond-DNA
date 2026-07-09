@@ -9,7 +9,7 @@ variable "github_owner" {
 }
 
 variable "github_repo" {
-  description = "GitHub repository name (e.g. Diamond-DNA)"
+  description = "GitHub repository name (e.g. xWAR-Engine)"
   type        = string
 }
 

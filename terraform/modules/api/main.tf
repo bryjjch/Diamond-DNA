@@ -94,7 +94,7 @@ resource "aws_lambda_function" "api" {
 resource "aws_apigatewayv2_api" "api" {
   name          = "${var.name_prefix}-api"
   protocol_type = "HTTP"
-  description   = "Diamond-DNA HTTP API (cluster browser + KNN neighbors)"
+  description   = "xWAR Engine HTTP API (cluster browser + KNN neighbors)"
 
   cors_configuration {
     allow_origins = var.cors_allow_origins

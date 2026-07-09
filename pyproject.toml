@@ -3,9 +3,9 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "diamond-dna"
+name = "xwar-engine"
 version = "0.1.0"
-description = "Diamond-DNA data lake and feature pipelines"
+description = "xWAR Engine data lake, feature pipelines, and performance projections"
 requires-python = ">=3.10"
 dependencies = [
     "pandas>=2.0",

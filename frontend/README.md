@@ -1,6 +1,6 @@
-# Diamond-DNA Frontend
+# xWAR Engine Frontend
 
-React + TypeScript SPA for the Diamond-DNA cluster browser and KNN similarity
+React + TypeScript SPA for the xWAR Engine cluster browser and KNN similarity
 viewer. Built with Vite, Tailwind v4, TanStack Query, and React Router.
 
 ## Local development
