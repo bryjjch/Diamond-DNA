@@ -1,8 +1,13 @@
 # =============================================================================
-# Diamond DNA Terraform Variables
+# xWAR Engine Terraform Variables
 # =============================================================================
 # Copy this file to terraform.tfvars and set values. S3 bucket names must be
 # globally unique across all AWS accounts.
+#
+# NOTE: the bucket name and name_prefix below are the legacy Diamond-DNA
+# values still used by the existing deployment. Changing them in a live
+# workspace destroys and recreates every named resource (and buckets cannot
+# be renamed at all) — keep them until the projections infra rebuild.
 # =============================================================================
 
 # -----------------------------------------------------------------------------

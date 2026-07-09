@@ -21,8 +21,8 @@ export function Sidebar() {
           <i className="pi pi-bolt text-base" />
         </span>
         <div className="flex flex-col leading-tight">
-          <span className="text-sm font-semibold tracking-tight">Diamond DNA</span>
-          <span className="text-[11px] uppercase tracking-wider text-muted">Analytics</span>
+          <span className="text-sm font-semibold tracking-tight">xWAR Engine</span>
+          <span className="text-[11px] uppercase tracking-wider text-muted">Projections</span>
         </div>
       </div>
 

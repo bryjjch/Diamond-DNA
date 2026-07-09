@@ -1,4 +1,4 @@
-"""AWS Lambda handler for the Diamond-DNA HTTP API.
+"""AWS Lambda handler for the xWAR Engine HTTP API.
 
 Routes API Gateway HTTP API v2 events to data-loader functions, 
 returning JSON. Pre-computed archetype and neighbor tables
@@ -218,6 +218,6 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     if path in ("/api/player_soft_profile", "/player_soft_profile"):
         return _route_player_soft_profile(qs)
     if path in ("/api/health", "/health", "/"):
-        return _response(200, {"ok": True, "service": "diamond-dna-api"})
+        return _response(200, {"ok": True, "service": "xwar-engine-api"})
 
     return _response(404, {"ok": False, "error": f"no route for {path}"})
