@@ -32,7 +32,7 @@ DEFENCE_OUTFIELD_CATCH_PARQUET = "statcast_outfield_catch_probability.parquet"
 DEFENCE_CATCHER_POPTIME_PARQUET = "statcast_catcher_poptime.parquet"
 DEFENCE_CATCHER_FRAMING_PARQUET = "statcast_catcher_framing.parquet"
 DEFENCE_ARM_STRENGTH_PARQUET = "statcast_arm_strength.parquet"
-DEFENCE_FANGRAPHS_FIELDING_PARQUET = "fangraphs_fielding.parquet"
+DEFENCE_FRV_PARQUET = "statcast_fielding_run_value.parquet"
 
 
 def raw_statcast_day_key(prefix: str, d: date) -> str:

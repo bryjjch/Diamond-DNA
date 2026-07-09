@@ -28,7 +28,6 @@ from .build_player_year_archetype_rows import (
     player_year_features_from_df,
 )
 from .defence_player_year import (
-    fangraphs_to_mlbam_map,
     load_defence_metrics_by_player_year,
     load_primary_positions_by_player_year,
     merge_defence_into_row,
@@ -200,7 +199,7 @@ def build_bronze_to_silver_features(
         name_by_mlbam = build_mlbam_statcast_style_name_map(chadwick_df)
     except Exception as exc:
         logger.warning(
-            "Could not load Chadwick register (%s); pitcher names may be blank and FanGraphs id map falls back to a separate load.",
+            "Could not load Chadwick register (%s); pitcher names may be blank.",
             exc,
         )
 
@@ -223,13 +222,11 @@ def build_bronze_to_silver_features(
         defence_by_year: Dict[int, Dict[int, Dict[str, float]]] = {}
         positions_by_year: Dict[int, Dict[int, str]] = {}
         if role == "batter":
-            fg_map = fangraphs_to_mlbam_map(chadwick_df) if chadwick_df is not None else fangraphs_to_mlbam_map()
             for y in range(year_lo, year_hi + 1):
                 defence_by_year[y] = load_defence_metrics_by_player_year(
                     bucket,
                     raw_defence_prefix,
                     y,
-                    fg_id_map=fg_map,
                 )
                 positions_by_year[y] = load_primary_positions_by_player_year(
                     bucket,
