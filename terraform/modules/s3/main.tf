@@ -13,3 +13,12 @@ resource "aws_s3_bucket_public_access_block" "data_lake" {
   ignore_public_acls      = true
   restrict_public_buckets = true
 }
+
+# Versioning is required to enable cross-region/same-region replication later.
+resource "aws_s3_bucket_versioning" "data_lake" {
+  bucket = aws_s3_bucket.data_lake.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}

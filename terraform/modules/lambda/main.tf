@@ -60,7 +60,7 @@ resource "aws_iam_role_policy_attachment" "statcast_ingestion_lambda_basic" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-# S3 write access for bronze ingestion Lambda
+# S3 write access for bronze ingestion Lambda (statcast pitches + running + defence prefixes)
 resource "aws_iam_role_policy" "statcast_ingestion_s3_access" {
   name = "${var.name_prefix}-statcast-ingestion-s3"
   role = aws_iam_role.statcast_ingestion.id
@@ -73,7 +73,11 @@ resource "aws_iam_role_policy" "statcast_ingestion_s3_access" {
         Action = [
           "s3:PutObject"
         ]
-        Resource = "${var.data_lake_bucket_arn}/${var.s3_prefix}/*"
+        Resource = [
+          "${var.data_lake_bucket_arn}/${var.s3_prefix}/*",
+          "${var.data_lake_bucket_arn}/${var.raw_running_s3_prefix}/*",
+          "${var.data_lake_bucket_arn}/${var.raw_defence_s3_prefix}/*",
+        ]
       }
     ]
   })
@@ -113,6 +117,24 @@ resource "aws_iam_role_policy" "silver_feature_build_s3_access" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:ListBucket"
+        ]
+        Resource = var.data_lake_bucket_arn
+        Condition = {
+          StringLike = {
+            "s3:prefix" = [
+              "${var.s3_prefix}/*",
+              "${var.raw_running_s3_prefix}/*",
+              "${var.raw_defence_s3_prefix}/*",
+              "${var.silver_s3_prefix}/*",
+              "${var.gold_s3_prefix}/*",
+            ]
+          }
+        }
+      },
       {
         Effect = "Allow"
         Action = [
@@ -181,6 +203,21 @@ resource "aws_iam_role_policy" "gold_preprocessing_s3_access" {
       {
         Effect = "Allow"
         Action = [
+          "s3:ListBucket"
+        ]
+        Resource = var.data_lake_bucket_arn
+        Condition = {
+          StringLike = {
+            "s3:prefix" = [
+              "${var.silver_s3_prefix}/*",
+              "${var.gold_s3_prefix}/*",
+            ]
+          }
+        }
+      },
+      {
+        Effect = "Allow"
+        Action = [
           "s3:GetObject"
         ]
         Resource = "${var.data_lake_bucket_arn}/${var.silver_s3_prefix}/*"
@@ -233,8 +270,12 @@ resource "aws_lambda_function" "statcast_ingestion" {
 
   environment {
     variables = {
-      S3_BUCKET = var.data_lake_bucket_name
-      S3_PREFIX = var.s3_prefix
+      S3_BUCKET           = var.data_lake_bucket_name
+      S3_PREFIX           = var.s3_prefix
+      RAW_RUNNING_PREFIX  = var.raw_running_s3_prefix
+      RAW_DEFENCE_PREFIX  = var.raw_defence_s3_prefix
+      PYBASEBALL_NO_CACHE = "true"
+      HOME                = "/tmp"
     }
   }
 
@@ -298,7 +339,7 @@ resource "aws_lambda_function" "gold_preprocessing" {
 # EventBridge rule for bronze ingestion (daily)
 resource "aws_cloudwatch_event_rule" "statcast_ingestion" {
   name                = "${var.name_prefix}-statcast-ingestion-schedule"
-  description         = "Trigger bronze Statcast pitch ingestion (daily: yesterday UTC)"
+  description         = "Trigger bronze ingestion (daily: statcast pitches for yesterday UTC + running/defence for the current season)"
   schedule_expression = var.schedule_expression
   tags                = var.tags
 }
