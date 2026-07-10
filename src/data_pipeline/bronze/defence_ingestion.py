@@ -2,8 +2,8 @@
 """
 Defensive metrics ingestion (batters / position players).
 
-Fetches Statcast fielding leaderboards, Savant arm strength, FanGraphs fielding (DRS),
-and uploads Parquet under:
+Fetches Statcast fielding leaderboards (OAA, catch probability, pop time, framing,
+arm strength, fielding run value) from Baseball Savant and uploads Parquet under:
 
   {s3_prefix}/year=YYYY/<dataset>.parquet
 
@@ -15,21 +15,19 @@ from __future__ import annotations
 import io
 import logging
 from datetime import datetime, timezone
-from typing import Any, List, Optional
+from typing import Any, List
 
 import pandas as pd
 import requests
 
 try:
     from pybaseball import (
-        fielding_stats,
         statcast_catcher_poptime,
         statcast_outfield_catch_prob,
         statcast_outs_above_average,
     )
     from pybaseball.utils import sanitize_statcast_columns
 except Exception:
-    fielding_stats = None
     statcast_catcher_poptime = None
     statcast_outfield_catch_prob = None
     statcast_outs_above_average = None
@@ -41,7 +39,7 @@ from ...common.s3_interaction import (
     DEFENCE_ARM_STRENGTH_PARQUET,
     DEFENCE_CATCHER_FRAMING_PARQUET,
     DEFENCE_CATCHER_POPTIME_PARQUET,
-    DEFENCE_FANGRAPHS_FIELDING_PARQUET,
+    DEFENCE_FRV_PARQUET,
     DEFENCE_OAA_PARQUET,
     DEFENCE_OUTFIELD_CATCH_PARQUET,
     raw_defence_dataset_key,
@@ -62,6 +60,10 @@ SAVANT_CATCHER_FRAMING_CSV = (
     "https://baseballsavant.mlb.com/leaderboard/catcher-framing"
     "?type=catcher&seasonStart={year}&seasonEnd={year}&team=&min={min_called_p}"
     "&sortColumn=rv_tot&sortDirection=desc&csv=true"
+)
+SAVANT_FIELDING_RUN_VALUE_CSV = (
+    "https://baseballsavant.mlb.com/leaderboard/fielding-run-value"
+    "?type=fielder&seasonStart={year}&seasonEnd={year}&csv=true"
 )
 
 
@@ -89,6 +91,20 @@ def fetch_statcast_catcher_framing_robust(year: int, *, min_called_p: str | int 
     """
     url = SAVANT_CATCHER_FRAMING_CSV.format(year=year, min_called_p=min_called_p)
     df = _read_savant_csv(url)
+    if sanitize_statcast_columns is not None:
+        df = sanitize_statcast_columns(df)
+    if "name" in df.columns:
+        df = df.loc[df["name"].notna()].reset_index(drop=True)
+    return df
+
+
+def fetch_statcast_fielding_run_value(year: int) -> pd.DataFrame:
+    """
+    Fielding run value leaderboard (Savant). Statcast's overall defensive value
+    metric; replaces the FanGraphs DRS feed, which now blocks automated requests
+    (https://github.com/jldbc/pybaseball/issues/507). Full coverage from 2016.
+    """
+    df = _read_savant_csv(SAVANT_FIELDING_RUN_VALUE_CSV.format(year=year))
     if sanitize_statcast_columns is not None:
         df = sanitize_statcast_columns(df)
     if "name" in df.columns:
@@ -125,7 +141,6 @@ def ingest_defence_year(
     framing_min_called: str | int = "q",
     pop_min_2b: int = 5,
     pop_min_3b: int = 0,
-    fangraphs_qual: Optional[int] = None,
 ) -> dict:
     """
     Ingest defence data for a given year.
@@ -134,7 +149,7 @@ def ingest_defence_year(
     if year > current_year + 1:
         return {"status": "error", "message": f"Year {year} is too far in the future (current UTC year: {current_year})."}
 
-    if statcast_outs_above_average is None or fielding_stats is None:
+    if statcast_outs_above_average is None:
         return {"status": "error", "message": "pybaseball is required for defence ingestion."}
 
     uploads: List[tuple[str, pd.DataFrame]] = []
@@ -198,18 +213,17 @@ def ingest_defence_year(
     elif df_arm is None:
         errors.append(f"{year}: arm strength fetch failed")
 
-    # FanGraphs fielding
-    def _fg() -> pd.DataFrame:
-        """Fetch FanGraphs fielding data for a given year."""
-        return fielding_stats(year, year, qual=fangraphs_qual, split_seasons=True)  # type: ignore[misc]
-
-    df_fg = retry_with_backoff(f"FanGraphs fielding year={year}", _fg)
-    if df_fg is not None and not df_fg.empty:
+    # Fielding run value
+    df_frv = retry_with_backoff(
+        f"fielding run value year={year}",
+        lambda: fetch_statcast_fielding_run_value(year),
+    )
+    if df_frv is not None and not df_frv.empty:
         uploads.append(
-            (raw_defence_dataset_key(s3_prefix, year, DEFENCE_FANGRAPHS_FIELDING_PARQUET), df_fg)
+            (raw_defence_dataset_key(s3_prefix, year, DEFENCE_FRV_PARQUET), df_frv)
         )
-    elif df_fg is None:
-        errors.append(f"{year}: FanGraphs fielding fetch failed")
+    elif df_frv is None:
+        errors.append(f"{year}: fielding run value fetch failed")
 
     total_rows = 0
     for key, df in uploads:
@@ -238,7 +252,6 @@ def ingest_year_range(
     framing_min_called: str | int = "q",
     pop_min_2b: int = 5,
     pop_min_3b: int = 0,
-    fangraphs_qual: Optional[int] = None,
 ) -> dict:
     """
     Ingest defence data for a range of years.
@@ -262,7 +275,6 @@ def ingest_year_range(
             framing_min_called=framing_min_called,
             pop_min_2b=pop_min_2b,
             pop_min_3b=pop_min_3b,
-            fangraphs_qual=fangraphs_qual,
         )
         total_rows += int(r.get("total_rows", 0))
         all_errors.extend(r.get("errors", []))

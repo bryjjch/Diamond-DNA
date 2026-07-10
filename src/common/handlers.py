@@ -279,7 +279,6 @@ def defence_ingestion_handler(event: Dict[str, Any], context: Any) -> Dict[str, 
 
     oaa_s = event_or_env_str(event, "oaa_min_att", "OAA_MIN_ATT", "q")
     framing_s = event_or_env_str(event, "framing_min_called", "FRAMING_MIN_CALLED", "q")
-    ev = event if isinstance(event, dict) else {}
     result = ingest_year_range(
         start_year,
         end_year,
@@ -290,7 +289,6 @@ def defence_ingestion_handler(event: Dict[str, Any], context: Any) -> Dict[str, 
         framing_min_called=_parse_defence_min_qual_str(framing_s, "q"),
         pop_min_2b=event_or_env_int(event, "pop_min_2b", "POP_MIN_2B", 5),
         pop_min_3b=event_or_env_int(event, "pop_min_3b", "POP_MIN_3B", 0),
-        fangraphs_qual=ev.get("fangraphs_qual"),
     )
     status_code = 200 if result["status"] == "ok" else (207 if result["status"] == "partial" else 400)
     return {"statusCode": status_code, **result}
@@ -410,7 +408,6 @@ def bronze_ingestion_handler(event: Dict[str, Any], context: Any) -> Dict[str, A
         framing_min_called=_parse_defence_min_qual_str(framing_s, "q"),
         pop_min_2b=event_or_env_int(event, "pop_min_2b", "POP_MIN_2B", 5),
         pop_min_3b=event_or_env_int(event, "pop_min_3b", "POP_MIN_3B", 0),
-        fangraphs_qual=ev.get("fangraphs_qual"),
     )
     status_code = 200 if result["status"] == "ok" else (207 if result["status"] == "partial" else 400)
     return {"statusCode": status_code, **result}

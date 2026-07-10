@@ -1,8 +1,8 @@
 """
 Load raw defensive Parquet layers from S3 and aggregate to MLBAM player_id -> metrics.
 
-Used to enrich batter player-year feature rows. FanGraphs rows are mapped through
-Chadwick ``key_fangraphs`` -> ``key_mlbam``.
+Used to enrich batter player-year feature rows. All sources are Savant
+leaderboards keyed by MLBAM player id.
 """
 
 from __future__ import annotations
@@ -13,16 +13,11 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-try:
-    from pybaseball import chadwick_register
-except Exception:
-    chadwick_register = None
-
 from ...common.s3_interaction import (
     DEFENCE_ARM_STRENGTH_PARQUET,
     DEFENCE_CATCHER_FRAMING_PARQUET,
     DEFENCE_CATCHER_POPTIME_PARQUET,
-    DEFENCE_FANGRAPHS_FIELDING_PARQUET,
+    DEFENCE_FRV_PARQUET,
     DEFENCE_OAA_PARQUET,
     DEFENCE_OUTFIELD_CATCH_PARQUET,
     raw_defence_dataset_key,
@@ -39,7 +34,7 @@ _DEFENCE_METRIC_KEYS: Tuple[str, ...] = (
     "def_arm_strength_max_mph",
     "def_pop_time_2b_sec",
     "def_framing_runs",
-    "def_drs_total",
+    "def_frv_total",
 )
 
 # Map Statcast/MLB numeric position codes to short labels. Catcher (2) is sourced from
@@ -108,25 +103,10 @@ def _weighted_of_catch_completion(df: pd.DataFrame) -> pd.Series:
     return pd.Series(rate, index=pids)
 
 
-def fangraphs_to_mlbam_map(cw: Optional[pd.DataFrame] = None) -> Dict[int, int]:
-    """Return a dictionary mapping FanGraphs IDs to MLBAM IDs."""
-    if chadwick_register is None:
-        logger.warning("pybaseball.chadwick_register unavailable; FanGraphs DRS merge skipped.")
-        return {}
-    if cw is None:
-        cw = chadwick_register()
-    fg = pd.to_numeric(cw["key_fangraphs"], errors="coerce")
-    mlb = pd.to_numeric(cw["key_mlbam"], errors="coerce")
-    mask = fg.notna() & mlb.notna()
-    return {int(a): int(b) for a, b in zip(fg[mask], mlb[mask])}
-
-
 def load_defence_metrics_by_player_year(
     bucket: str,
     raw_defence_prefix: str,
     year: int,
-    *,
-    fg_id_map: Optional[Dict[int, int]] = None,
 ) -> Dict[int, Dict[str, float]]:
     """
     Returns mapping MLBAM player_id -> defensive feature columns (nan if unknown).
@@ -245,31 +225,22 @@ def load_defence_metrics_by_player_year(
                 row = out.setdefault(pid_i, _empty_metrics())
                 row["def_framing_runs"] = float(val)
 
-    # --- FanGraphs DRS (sum across position lines) ---
-    fg_key = raw_defence_dataset_key(raw_defence_prefix, year, DEFENCE_FANGRAPHS_FIELDING_PARQUET)
-    fg_df = read_parquet_from_s3(bucket, fg_key, log_read=False, missing_key_log="none")
-    if fg_df is not None and not fg_df.empty:
-        idfg_c = _col_ci(fg_df, "IDfg", "idfg")
-        drs_c = _col_ci(fg_df, "DRS")
-        season_c = _col_ci(fg_df, "Season", "season")
-        if idfg_c and drs_c:
-            tmp = fg_df.copy()
-            if season_c:
-                sy = pd.to_numeric(tmp[season_c], errors="coerce")
-                tmp = tmp[sy == year]
-            id_map = fg_id_map if fg_id_map is not None else fangraphs_to_mlbam_map()
-            if id_map:
-                tmp[idfg_c] = pd.to_numeric(tmp[idfg_c], errors="coerce")
-                drs_vals = pd.to_numeric(tmp[drs_c], errors="coerce")
-                grp_sum = tmp.assign(_drs=drs_vals).groupby(idfg_c)["_drs"].sum(min_count=1)
-                for idfg, drs in grp_sum.items():
-                    if pd.isna(idfg):
-                        continue
-                    mlb = id_map.get(int(idfg))
-                    if mlb is None:
-                        continue
-                    row = out.setdefault(mlb, _empty_metrics())
-                    row["def_drs_total"] = float(drs) if pd.notna(drs) else float("nan")
+    # --- Fielding run value (Savant; season total defensive runs, one row per player) ---
+    frv_key = raw_defence_dataset_key(raw_defence_prefix, year, DEFENCE_FRV_PARQUET)
+    frv_df = read_parquet_from_s3(bucket, frv_key, log_read=False, missing_key_log="none")
+    if frv_df is not None and not frv_df.empty:
+        pid_c = _col_ci(frv_df, "id", "player_id")
+        frv_c = _col_ci(frv_df, "total_runs")
+        if pid_c and frv_c:
+            for pid, val in zip(
+                pd.to_numeric(frv_df[pid_c], errors="coerce"),
+                pd.to_numeric(frv_df[frv_c], errors="coerce"),
+            ):
+                if pd.isna(pid) or pd.isna(val):
+                    continue
+                row = out.setdefault(int(pid), _empty_metrics())
+                # Set the total fielding run value for the player.
+                row["def_frv_total"] = float(val)
 
     return out
 

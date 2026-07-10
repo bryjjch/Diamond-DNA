@@ -48,7 +48,6 @@ def ingest_all_bronze(
     framing_min_called: str | int = "q",
     pop_min_2b: int = 5,
     pop_min_3b: int = 0,
-    fangraphs_qual: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Run the selected bronze ingestion sources and aggregate their results.
@@ -94,7 +93,6 @@ def ingest_all_bronze(
             framing_min_called=framing_min_called,
             pop_min_2b=pop_min_2b,
             pop_min_3b=pop_min_3b,
-            fangraphs_qual=fangraphs_qual,
         ),
     }
 

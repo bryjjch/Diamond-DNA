@@ -306,7 +306,6 @@ def run_defence_ingestion_main() -> None:
     parser.add_argument("--framing-min-called", type=str, default="q")
     parser.add_argument("--pop-min-2b", type=int, default=5)
     parser.add_argument("--pop-min-3b", type=int, default=0)
-    parser.add_argument("--fangraphs-qual", type=int, default=None)
     args = parser.parse_args()
 
     oaa_min: str | int = args.oaa_min_att
@@ -327,7 +326,6 @@ def run_defence_ingestion_main() -> None:
         framing_min_called=framing_min,
         pop_min_2b=args.pop_min_2b,
         pop_min_3b=args.pop_min_3b,
-        fangraphs_qual=args.fangraphs_qual,
     )
 
     if result["status"] == "error":
@@ -459,7 +457,6 @@ def run_bronze_ingestion_main() -> None:
     parser.add_argument("--framing-min-called", type=str, default="q")
     parser.add_argument("--pop-min-2b", type=int, default=5)
     parser.add_argument("--pop-min-3b", type=int, default=0)
-    parser.add_argument("--fangraphs-qual", type=int, default=None)
     args = parser.parse_args()
 
     sources = [s.strip() for s in args.sources.split(",") if s.strip()]
@@ -488,7 +485,6 @@ def run_bronze_ingestion_main() -> None:
         framing_min_called=framing_min,
         pop_min_2b=args.pop_min_2b,
         pop_min_3b=args.pop_min_3b,
-        fangraphs_qual=args.fangraphs_qual,
     )
 
     if result["status"] == "error":
