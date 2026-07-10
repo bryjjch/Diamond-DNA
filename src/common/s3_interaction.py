@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 STATCAST_PITCHES_FILENAME = "statcast_pitches.parquet"
 STATCAST_SPRINT_SPEED_FILENAME = "statcast_sprint_speed.parquet"
+PLAYER_BIO_FILENAME = "mlb_player_bios.parquet"
 PLAYER_YEAR_FEATURES_FILENAME = "player_year_features.parquet"
 GOLD_FEATURES_FILENAME = "player_year_features_preprocessed.parquet"
 GOLD_PREPROCESSING_METADATA_FILENAME = "preprocessing_metadata.json"
@@ -51,6 +52,12 @@ def raw_sprint_speed_key(prefix: str, year: int) -> str:
     """Bronze sprint speed leaderboard: {prefix}/year=Y/statcast_sprint_speed.parquet."""
     p = prefix.strip("/")
     return f"{p}/year={year}/{STATCAST_SPRINT_SPEED_FILENAME}"
+
+
+def raw_player_bio_key(prefix: str, year: int) -> str:
+    """Bronze MLB player bios: {prefix}/year=Y/mlb_player_bios.parquet."""
+    p = prefix.strip("/")
+    return f"{p}/year={year}/{PLAYER_BIO_FILENAME}"
 
 
 def raw_defence_dataset_key(prefix: str, year: int, dataset_filename: str) -> str:
