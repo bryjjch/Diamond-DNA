@@ -122,10 +122,10 @@ def build_bronze_to_silver_features(
     min_batted_ball_batter: int = 200,
     hard_hit_speed_mph: float = 95.0,
     min_pitches_per_pitch_type: int = 15,
-    raw_running_prefix: str,
+    raw_running_prefix: str = "bronze/statcast_running",
     sprint_speed_min_opp: int = 10,
-    raw_defence_prefix: str,
-    raw_bio_prefix: str,
+    raw_defence_prefix: str = "bronze/defence",
+    raw_bio_prefix: str = "bronze/bio"
 ) -> Dict[str, object]:
     """
     Build silver player-year feature tables from bronze Statcast dailies.
