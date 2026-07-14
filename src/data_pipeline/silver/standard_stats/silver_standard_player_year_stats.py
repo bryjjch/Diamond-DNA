@@ -8,7 +8,7 @@ MLB Stats API does not return directly, and writes one player-year table per rol
   {silver_prefix}/batter/year=Y/standard_stats_player_year.parquet
   {silver_prefix}/pitcher/year=Y/standard_stats_player_year.parquet
 
-Unlike bio_player_year / defence_player_year (which fold columns into the archetype
+Unlike the bio / defence player-year helpers (which fold columns into the archetype
 feature rows), this is a standalone table: the conventional slash line lives on its
 own so it can be joined to features/archetypes downstream without polluting the
 training feature set.
@@ -16,18 +16,16 @@ training feature set.
 
 from __future__ import annotations
 
+import argparse
 import logging
 from typing import Any, Dict, List
 
 import numpy as np
 import pandas as pd
 
-from ...common.s3_interaction import (
-    raw_standard_stats_key,
-    read_parquet_from_s3,
-    standard_stats_player_year_key,
-    write_parquet_to_s3,
-)
+from ....common.runtime_helpers import current_utc_year, event_or_env_int, event_or_env_str
+from ....common.s3_helpers import read_parquet_from_s3, write_parquet_to_s3
+from ....common.settings import PipelineSettings
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +85,7 @@ def build_standard_stats_for_year(
     """
     written: Dict[str, int] = {}
     for role, group in _ROLE_TO_GROUP.items():
-        key = raw_standard_stats_key(raw_standard_stats_prefix, year, group)
+        key = f"{raw_standard_stats_prefix.strip('/')}/year={year}/mlb_standard_{group}.parquet"
         df = read_parquet_from_s3(bucket, key, log_read=False, missing_key_log="none")
         if df is None or df.empty or "player_id" not in df.columns:
             logger.info("No bronze standard %s stats for year=%d; skipping.", group, year)
@@ -100,7 +98,9 @@ def build_standard_stats_for_year(
         df["year"] = year
         df = _DERIVERS[role](df)
 
-        out_key = standard_stats_player_year_key(silver_prefix, role, year)
+        out_key = (
+            f"{silver_prefix.strip('/')}/{role}/year={year}/standard_stats_player_year.parquet"
+        )
         logger.info(
             "Writing %d %s standard stat rows to s3://%s/%s", len(df), role, bucket, out_key
         )
@@ -163,15 +163,57 @@ def build_standard_stats_range(
 
 
 def main() -> None:
-    from ...common.cli import run_standard_stats_silver_main
+    cfg = PipelineSettings.from_environ()
+    cy = current_utc_year()
+    parser = argparse.ArgumentParser(
+        description="Build silver standard stat-line tables from bronze standard stats (year range)."
+    )
+    parser.add_argument("--start-year", type=int, default=cy - 1)
+    parser.add_argument("--end-year", type=int, default=cy)
+    parser.add_argument("--bucket", type=str, default=cfg.s3_bucket)
+    parser.add_argument(
+        "--raw-standard-stats-prefix", type=str, default=cfg.raw_standard_stats_prefix
+    )
+    parser.add_argument("--silver-prefix", type=str, default=cfg.feature_prefix)
+    args = parser.parse_args()
 
-    run_standard_stats_silver_main()
+    result = build_standard_stats_range(
+        bucket=args.bucket,
+        raw_standard_stats_prefix=args.raw_standard_stats_prefix,
+        silver_prefix=args.silver_prefix,
+        start_year=args.start_year,
+        end_year=args.end_year,
+    )
+
+    if result["status"] == "error":
+        logger.error(result["message"])
+        raise SystemExit(1)
+    if result["status"] == "no_data":
+        logger.warning(result["message"])
+    else:
+        logger.info(result["message"])
 
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    from ...common.handlers import standard_stats_silver_handler
+    cy = current_utc_year()
+    cfg = PipelineSettings.from_environ()
+    start_year = event_or_env_int(event, "start_year", "START_YEAR", cy - 1)
+    end_year = event_or_env_int(event, "end_year", "END_YEAR", cy)
+    bucket = event_or_env_str(event, "s3_bucket", "S3_BUCKET", cfg.s3_bucket)
+    raw_standard_stats_prefix = event_or_env_str(
+        event, "raw_standard_stats_prefix", "RAW_STANDARD_STATS_PREFIX", cfg.raw_standard_stats_prefix
+    )
+    silver_prefix = event_or_env_str(event, "silver_prefix", "FEATURE_PREFIX", cfg.feature_prefix)
 
-    return standard_stats_silver_handler(event, context)
+    result = build_standard_stats_range(
+        bucket=bucket,
+        raw_standard_stats_prefix=raw_standard_stats_prefix,
+        silver_prefix=silver_prefix,
+        start_year=start_year,
+        end_year=end_year,
+    )
+    status_code = 200 if result.get("status") in ("ok", "no_data") else 400
+    return {"statusCode": status_code, **result}
 
 
 if __name__ == "__main__":

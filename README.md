@@ -74,12 +74,16 @@ under `src/ml/`; their outputs are what the HTTP API serves.
 ```
 src/
   api/                  # HTTP API Lambda handler
-  common/               # shared S3 / settings / runtime helpers; CLI + Lambda handler wrappers
+  common/               # shared S3 / settings / runtime helpers
   data_pipeline/        # bronze → silver → gold ETL
     bronze/             # daily Statcast / running / defence / player-bio ingest
-    silver/             # bronze → silver feature build
+    silver/
+      archetype_features/  # bronze → silver archetype feature build
+      standard_stats/      # bronze → silver standard stat-line tables
     gold/               # silver → gold preprocessing
-  ml/                   # archetype clustering, KNN similarity
+  ml/
+    archetypes/         # archetype clustering, labeling, finetune sweeps
+    knn_neighbours/     # KNN similar-players similarity
 docker/                 # Dockerfiles + requirements per Lambda image
 frontend/               # React + TS SPA (Vercel)
 terraform/              # IaC: S3, pipeline Lambdas, API, CI/CD

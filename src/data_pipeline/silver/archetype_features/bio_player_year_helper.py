@@ -14,7 +14,7 @@ from typing import Dict, Tuple
 
 import pandas as pd
 
-from ...common.s3_interaction import raw_player_bio_key, read_parquet_from_s3
+from ....common.s3_helpers import read_parquet_from_s3
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ def load_player_bios_by_year(
     """
     out: Dict[int, Dict[str, object]] = {}
 
-    key = raw_player_bio_key(raw_bio_prefix, year)
+    key = f"{raw_bio_prefix.strip('/')}/year={year}/mlb_player_bios.parquet"
     df = read_parquet_from_s3(bucket, key, log_read=False, missing_key_log="none")
     if df is None or df.empty or "player_id" not in df.columns:
         return out

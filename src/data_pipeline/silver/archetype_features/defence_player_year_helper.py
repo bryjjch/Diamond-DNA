@@ -13,16 +13,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from ...common.s3_interaction import (
-    DEFENCE_ARM_STRENGTH_PARQUET,
-    DEFENCE_CATCHER_FRAMING_PARQUET,
-    DEFENCE_CATCHER_POPTIME_PARQUET,
-    DEFENCE_FRV_PARQUET,
-    DEFENCE_OAA_PARQUET,
-    DEFENCE_OUTFIELD_CATCH_PARQUET,
-    raw_defence_dataset_key,
-    read_parquet_from_s3,
-)
+from ....common.s3_helpers import read_parquet_from_s3
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +105,7 @@ def load_defence_metrics_by_player_year(
     out: Dict[int, Dict[str, float]] = {}
 
     # --- OAA (sum across positions; mean success rates across position rows) ---
-    oaa_key = raw_defence_dataset_key(raw_defence_prefix, year, DEFENCE_OAA_PARQUET)
+    oaa_key = f"{raw_defence_prefix.strip('/')}/year={year}/statcast_oaa.parquet"
     oaa_df = read_parquet_from_s3(bucket, oaa_key, log_read=False, missing_key_log="none")
     if oaa_df is not None and not oaa_df.empty:
         pid_c = _col_ci(oaa_df, "player_id")
@@ -159,7 +150,9 @@ def load_defence_metrics_by_player_year(
                     row["def_adj_estimated_fielding_success_rate_mean"] = float(adj_mean.loc[pid])
 
     # --- Outfield catch probability -> completion rate ---
-    cp_key = raw_defence_dataset_key(raw_defence_prefix, year, DEFENCE_OUTFIELD_CATCH_PARQUET)
+    cp_key = (
+        f"{raw_defence_prefix.strip('/')}/year={year}/statcast_outfield_catch_probability.parquet"
+    )
     cp_df = read_parquet_from_s3(bucket, cp_key, log_read=False, missing_key_log="none")
     if cp_df is not None and not cp_df.empty:
         # Get the weighted outfield catch completion rate for each player.
@@ -177,7 +170,7 @@ def load_defence_metrics_by_player_year(
             row["def_outfield_catch_completion_rate"] = float(r) if pd.notna(r) else float("nan")
 
     # --- Arm strength (Savant max arm ~ top-end throws) ---
-    arm_key = raw_defence_dataset_key(raw_defence_prefix, year, DEFENCE_ARM_STRENGTH_PARQUET)
+    arm_key = f"{raw_defence_prefix.strip('/')}/year={year}/statcast_arm_strength.parquet"
     arm_df = read_parquet_from_s3(bucket, arm_key, log_read=False, missing_key_log="none")
     if arm_df is not None and not arm_df.empty:
         pid_c = _col_ci(arm_df, "player_id")
@@ -196,7 +189,7 @@ def load_defence_metrics_by_player_year(
                 row["def_arm_strength_max_mph"] = float(val)
 
     # --- Catcher pop time (to 2B) ---
-    pop_key = raw_defence_dataset_key(raw_defence_prefix, year, DEFENCE_CATCHER_POPTIME_PARQUET)
+    pop_key = f"{raw_defence_prefix.strip('/')}/year={year}/statcast_catcher_poptime.parquet"
     pop_df = read_parquet_from_s3(bucket, pop_key, log_read=False, missing_key_log="none")
     if pop_df is not None and not pop_df.empty:
         pid_c = _col_ci(pop_df, "entity_id", "player_id")
@@ -211,7 +204,7 @@ def load_defence_metrics_by_player_year(
                 row["def_pop_time_2b_sec"] = float(val)
 
     # --- Catcher framing (runs) ---
-    frm_key = raw_defence_dataset_key(raw_defence_prefix, year, DEFENCE_CATCHER_FRAMING_PARQUET)
+    frm_key = f"{raw_defence_prefix.strip('/')}/year={year}/statcast_catcher_framing.parquet"
     frm_df = read_parquet_from_s3(bucket, frm_key, log_read=False, missing_key_log="none")
     if frm_df is not None and not frm_df.empty:
         pid_c = _col_ci(frm_df, "id", "player_id")
@@ -226,7 +219,7 @@ def load_defence_metrics_by_player_year(
                 row["def_framing_runs"] = float(val)
 
     # --- Fielding run value (Savant; season total defensive runs, one row per player) ---
-    frv_key = raw_defence_dataset_key(raw_defence_prefix, year, DEFENCE_FRV_PARQUET)
+    frv_key = f"{raw_defence_prefix.strip('/')}/year={year}/statcast_fielding_run_value.parquet"
     frv_df = read_parquet_from_s3(bucket, frv_key, log_read=False, missing_key_log="none")
     if frv_df is not None and not frv_df.empty:
         pid_c = _col_ci(frv_df, "id", "player_id")
@@ -278,8 +271,8 @@ def load_primary_positions_by_player_year(
     positions: Dict[int, str] = {}
 
     catcher_ids: set[int] = set()
-    for filename in (DEFENCE_CATCHER_FRAMING_PARQUET, DEFENCE_CATCHER_POPTIME_PARQUET):
-        key = raw_defence_dataset_key(raw_defence_prefix, year, filename)
+    for filename in ("statcast_catcher_framing.parquet", "statcast_catcher_poptime.parquet"):
+        key = f"{raw_defence_prefix.strip('/')}/year={year}/{filename}"
         df = read_parquet_from_s3(bucket, key, log_read=False, missing_key_log="none")
         if df is None or df.empty:
             continue
@@ -295,7 +288,7 @@ def load_primary_positions_by_player_year(
     for pid in catcher_ids:
         positions[pid] = "C"
 
-    oaa_key = raw_defence_dataset_key(raw_defence_prefix, year, DEFENCE_OAA_PARQUET)
+    oaa_key = f"{raw_defence_prefix.strip('/')}/year={year}/statcast_oaa.parquet"
     oaa_df = read_parquet_from_s3(bucket, oaa_key, log_read=False, missing_key_log="none")
     if oaa_df is not None and not oaa_df.empty:
         pid_c = _col_ci(oaa_df, "player_id")

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import io
 import json
 import logging
@@ -16,15 +17,9 @@ import pandas as pd
 import sklearn
 from sklearn.neighbors import NearestNeighbors
 
-from ..common.s3_interaction import (
-    get_s3_client,
-    gold_archetype_clustering_model_key,
-    gold_player_similar_neighbors_key,
-    gold_player_similarity_metadata_key,
-    gold_player_year_output_key,
-    read_parquet_from_s3,
-    write_parquet_to_s3,
-)
+from ...common.runtime_helpers import current_utc_year, event_or_env_int, event_or_env_str
+from ...common.s3_helpers import get_s3_client, read_parquet_from_s3, write_parquet_to_s3
+from ...common.settings import PipelineSettings
 
 logger = logging.getLogger(__name__)
 
@@ -285,9 +280,12 @@ def build_gold_player_similarity(
     for role in roles:
         for year in range(start_year, end_year + 1):
             # Get the input key for the gold player-year output.
-            in_key = gold_player_year_output_key(gold_prefix, role, year)
+            in_key = (
+                f"{gold_prefix.strip('/')}/{role}/year={year}"
+                "/player_year_features_preprocessed.parquet"
+            )
             # Get the model key for the archetype clustering model.
-            model_key = gold_archetype_clustering_model_key(gold_prefix, role, year)
+            model_key = f"{gold_prefix.strip('/')}/{role}/year={year}/archetype_clustering.joblib"
 
             # Read the gold player-year output.
             df = read_parquet_from_s3(bucket, in_key, missing_key_log="none")
@@ -337,11 +335,14 @@ def build_gold_player_similarity(
             )
 
             # Write the neighbor table to S3.
-            out_parquet_key = gold_player_similar_neighbors_key(gold_prefix, role, year)
+            out_parquet_key = (
+                f"{gold_prefix.strip('/')}/{role}/year={year}"
+                "/player_year_similar_neighbors.parquet"
+            )
             write_parquet_to_s3(neighbors_df, bucket, out_parquet_key, log_write=False)
 
             # Write the metadata to S3.
-            meta_key = gold_player_similarity_metadata_key(gold_prefix, role, year)
+            meta_key = f"{gold_prefix.strip('/')}/{role}/year={year}/player_similarity_metadata.json"
             meta = _similarity_metadata(
                 role=role,
                 year=year,
@@ -415,15 +416,135 @@ def build_gold_player_similarity(
 
 
 def main() -> None:
-    from ..common.cli import run_gold_player_similarity_main
+    cfg = PipelineSettings.from_environ()
+    cy = current_utc_year()
+    parser = argparse.ArgumentParser(
+        description=(
+            "Build K-nearest neighbor similarity in PCA space using archetype_clustering.joblib "
+            "per gold role/year and write long-form neighbor Parquet + metadata to S3."
+        )
+    )
+    parser.add_argument("--start-year", type=int, default=cy - 1)
+    parser.add_argument("--end-year", type=int, default=cy)
+    parser.add_argument("--bucket", type=str, default=cfg.s3_bucket)
+    parser.add_argument("--gold-prefix", type=str, default=cfg.gold_prefix)
+    parser.add_argument(
+        "--role",
+        choices=("all", "batter", "pitcher", "catcher"),
+        default="all",
+        help="Run similarity for all role cohorts or one specific role.",
+    )
+    parser.add_argument(
+        "--k-neighbors",
+        type=int,
+        default=10,
+        help="Number of nearest other players per row (default: 10).",
+    )
+    parser.add_argument(
+        "--metric",
+        choices=("minkowski", "euclidean", "manhattan", "chebyshev"),
+        default="minkowski",
+        help="sklearn NearestNeighbors metric (default: minkowski with p=2 = Euclidean).",
+    )
+    parser.add_argument(
+        "--minkowski-p",
+        type=int,
+        default=2,
+        help="Minkowski p when --metric=minkowski (default: 2).",
+    )
+    parser.add_argument(
+        "--algorithm",
+        type=str,
+        default="auto",
+        help="sklearn NearestNeighbors algorithm (default: auto).",
+    )
+    args = parser.parse_args()
 
-    run_gold_player_similarity_main()
+    sim_cfg = PlayerSimilarityConfig(
+        k_neighbors=args.k_neighbors,
+        metric=args.metric,
+        minkowski_p=args.minkowski_p,
+        algorithm=args.algorithm,
+    )
+
+    result = build_gold_player_similarity(
+        bucket=args.bucket,
+        gold_prefix=args.gold_prefix,
+        start_year=args.start_year,
+        end_year=args.end_year,
+        role_filter=args.role,
+        config=sim_cfg,
+    )
+
+    if result["status"] == "error":
+        logger.error(result["message"])
+        raise SystemExit(1)
+    if result["status"] == "no_data":
+        logger.warning(result["message"])
+        for err in result.get("errors", []):
+            logger.warning(err)
+    else:
+        logger.info(result["message"])
+        for err in result.get("errors", []):
+            if err:
+                logger.warning("Partial skip: %s", err)
 
 
 def handler(event: dict, context) -> dict:
-    from ..common.handlers import gold_player_similarity_handler
+    cy = current_utc_year()
+    cfg = PipelineSettings.from_environ()
+    start_year = event_or_env_int(event, "start_year", "START_YEAR", cy - 1)
+    end_year = event_or_env_int(event, "end_year", "END_YEAR", cy)
+    bucket = event_or_env_str(event, "s3_bucket", "S3_BUCKET", cfg.s3_bucket)
+    gold_prefix = event_or_env_str(event, "gold_prefix", "GOLD_PREFIX", cfg.gold_prefix)
+    role = event_or_env_str(event, "role", "ROLE", "all")
 
-    return gold_player_similarity_handler(event, context)
+    k_raw = str(event_or_env_str(event, "k_neighbors", "K_NEIGHBORS", "10")).strip()
+    metric = str(
+        event_or_env_str(event, "metric", "METRIC", "minkowski")
+    ).strip().lower()
+    p_raw = str(event_or_env_str(event, "minkowski_p", "MINKOWSKI_P", "2")).strip()
+    algorithm = str(event_or_env_str(event, "algorithm", "ALGORITHM", "auto")).strip()
+
+    valid_metrics = ("minkowski", "euclidean", "manhattan", "chebyshev")
+    if metric not in valid_metrics:
+        return {
+            "statusCode": 400,
+            "body": f"METRIC must be one of {list(valid_metrics)}; got {metric!r}.",
+            "details": {},
+        }
+
+    try:
+        k_neighbors = int(k_raw)
+        minkowski_p = int(p_raw)
+    except ValueError:
+        return {
+            "statusCode": 400,
+            "body": "K_NEIGHBORS and MINKOWSKI_P must be integers when set.",
+            "details": {},
+        }
+
+    sim_cfg = PlayerSimilarityConfig(
+        k_neighbors=k_neighbors,
+        metric=metric,
+        minkowski_p=minkowski_p,
+        algorithm=algorithm,
+    )
+
+    result = build_gold_player_similarity(
+        bucket=bucket,
+        gold_prefix=gold_prefix,
+        start_year=start_year,
+        end_year=end_year,
+        role_filter=role,
+        config=sim_cfg,
+    )
+    status_code = 200 if result.get("status") in ("ok", "no_data") else 400
+    return {
+        "statusCode": status_code,
+        "body": result.get("message", ""),
+        "details": result,
+    }
 
 
 if __name__ == "__main__":

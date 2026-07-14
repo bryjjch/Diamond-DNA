@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import io
 import json
@@ -20,17 +21,10 @@ from sklearn.mixture import GaussianMixture
 from sklearn.metrics import davies_bouldin_score, silhouette_score
 from sklearn.preprocessing import RobustScaler
 
-from ..data_pipeline.gold.preprocessing import ID_COLUMNS
-from ..common.s3_interaction import (
-    get_s3_client,
-    gold_archetype_assignments_key,
-    gold_archetype_cluster_labels_key,
-    gold_archetype_clustering_metadata_key,
-    gold_archetype_clustering_model_key,
-    gold_player_year_output_key,
-    read_parquet_from_s3,
-    write_parquet_to_s3,
-)
+from ...data_pipeline.gold.gold_preprocessing import ID_COLUMNS
+from ...common.runtime_helpers import current_utc_year, event_or_env_int, event_or_env_str
+from ...common.s3_helpers import get_s3_client, read_parquet_from_s3, write_parquet_to_s3
+from ...common.settings import PipelineSettings
 
 logger = logging.getLogger(__name__)
 
@@ -386,7 +380,7 @@ def fit_archetype_clustering(
         "clustering_index_columns": index_cols,
         "feature_exclusion_rules": [
             "player_id, player_name, year, role, n_pitches_total → not used as PCA/GMM features (index via prepare_dataframe_for_archetype_clustering when present as columns)",
-            "All other column selection for clustering is done in data_pipeline.gold.preprocessing (archetype-training drop pass and role-irrelevant drop pass)",
+            "All other column selection for clustering is done in data_pipeline.gold.gold_preprocessing (archetype-training drop pass and role-irrelevant drop pass)",
         ],
         "scaler": "RobustScaler",
         "pca_mode": pca_mode,
@@ -461,7 +455,7 @@ def _build_cluster_labels_for_role_year(
     """Defer the import so the labeling module (and Gemini SDK) is only loaded when needed."""
     from .archetype_labeling import build_cluster_labels
 
-    labels_key = gold_archetype_cluster_labels_key(gold_prefix, role, year)
+    labels_key = f"{gold_prefix.strip('/')}/{role}/year={year}/cluster_labels.json"
     return build_cluster_labels(
         labeled,
         role=role,
@@ -555,7 +549,10 @@ def build_gold_archetype_clustering(
     for role in roles:
         for year in range(start_year, end_year + 1):
             # Read the gold player-year output.
-            in_key = gold_player_year_output_key(gold_prefix, role, year)
+            in_key = (
+                f"{gold_prefix.strip('/')}/{role}/year={year}"
+                "/player_year_features_preprocessed.parquet"
+            )
             df = read_parquet_from_s3(bucket, in_key, missing_key_log="none")
             if df is None or df.empty:
                 continue
@@ -581,15 +578,19 @@ def build_gold_archetype_clustering(
                 continue
 
             # Write the archetype assignments to S3.
-            out_parquet_key = gold_archetype_assignments_key(gold_prefix, role, year)
+            out_parquet_key = (
+                f"{gold_prefix.strip('/')}/{role}/year={year}/player_year_archetypes.parquet"
+            )
             write_parquet_to_s3(labeled, bucket, out_parquet_key, log_write=False)
 
             # Write the archetype clustering model to S3.
-            model_key = gold_archetype_clustering_model_key(gold_prefix, role, year)
+            model_key = f"{gold_prefix.strip('/')}/{role}/year={year}/archetype_clustering.joblib"
             _write_joblib_to_s3(bundle, bucket, model_key)
 
             # Write the archetype clustering metadata to S3.
-            meta_key = gold_archetype_clustering_metadata_key(gold_prefix, role, year)
+            meta_key = (
+                f"{gold_prefix.strip('/')}/{role}/year={year}/archetype_clustering_metadata.json"
+            )
             _write_json_to_s3(bucket, meta_key, metadata)
 
             # Generate + write the cluster_labels.json sidecar (Gemini). A failure here
@@ -672,15 +673,337 @@ def build_gold_archetype_clustering(
 
 
 def main() -> None:
-    from ..common.cli import run_gold_archetype_clustering_main
+    def _parse_bic_k_range(raw: Optional[str]) -> Optional[Tuple[int, int]]:
+        """Parse ``"k_min:k_max"`` into a tuple, or return None when empty."""
+        if raw is None:
+            return None
+        s = str(raw).strip()
+        if not s:
+            return None
+        if ":" not in s:
+            raise argparse.ArgumentTypeError(
+                f"bic-k-range must be 'k_min:k_max'; got {raw!r}."
+            )
+        k_lo_s, k_hi_s = s.split(":", 1)
+        try:
+            return int(k_lo_s), int(k_hi_s)
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError(str(exc)) from exc
 
-    run_gold_archetype_clustering_main()
+    cfg = PipelineSettings.from_environ()
+    cy = current_utc_year()
+    parser = argparse.ArgumentParser(
+        description=(
+            "Fit archetype clustering (RobustScaler, PCA, GaussianMixture) on gold "
+            "preprocessed player-year tables and write assignments + model artifacts to S3. "
+            "PCA dimensionality may be fixed (--pca-n-components) or variance-target "
+            "(--pca-variance-target). Cluster count may be fixed (--n-clusters) or BIC-selected "
+            "(--bic-k-range k_min:k_max)."
+        )
+    )
+    parser.add_argument("--start-year", type=int, default=cy - 1)
+    parser.add_argument("--end-year", type=int, default=cy)
+    parser.add_argument("--bucket", type=str, default=cfg.s3_bucket)
+    parser.add_argument("--gold-prefix", type=str, default=cfg.gold_prefix)
+    parser.add_argument(
+        "--role",
+        choices=("all", "batter", "pitcher", "catcher"),
+        default="all",
+        help="Run clustering for all cohorts or one specific role.",
+    )
+    # Defaults applied to every role unless overridden.
+    parser.add_argument("--pca-n-components", type=int, default=None)
+    parser.add_argument(
+        "--pca-variance-target",
+        type=float,
+        default=None,
+        help="Smallest n_components such that cumulative variance >= target (in (0, 1]).",
+    )
+    parser.add_argument("--n-clusters", type=int, default=None)
+    parser.add_argument(
+        "--bic-k-range",
+        type=str,
+        default=None,
+        help="Sweep range 'k_min:k_max' (inclusive); pick k minimizing GMM BIC.",
+    )
+    parser.add_argument(
+        "--gmm-covariance-type",
+        choices=GMM_COVARIANCE_TYPES,
+        default="full",
+        help="GaussianMixture covariance_type (default: full).",
+    )
+    for role in ("pitcher", "batter", "catcher"):
+        parser.add_argument(f"--{role}-pca-n-components", type=int, default=None)
+        parser.add_argument(f"--{role}-pca-variance-target", type=float, default=None)
+        parser.add_argument(f"--{role}-n-clusters", type=int, default=None)
+        parser.add_argument(f"--{role}-bic-k-range", type=str, default=None)
+        parser.add_argument(
+            f"--{role}-gmm-covariance-type",
+            choices=GMM_COVARIANCE_TYPES,
+            default=None,
+        )
+    parser.add_argument("--random-state", type=int, default=42)
+    parser.add_argument("--n-init", type=int, default=10)
+    args = parser.parse_args()
+
+    base_cov = args.gmm_covariance_type
+    base_pca = args.pca_n_components
+    base_var = args.pca_variance_target
+    base_k = args.n_clusters
+    base_bic = _parse_bic_k_range(args.bic_k_range)
+
+    def _resolve(role: str) -> ArchetypeClusteringConfig:
+        ns_pca = getattr(args, f"{role}_pca_n_components")
+        ns_var = getattr(args, f"{role}_pca_variance_target")
+        ns_k = getattr(args, f"{role}_n_clusters")
+        ns_bic_raw = getattr(args, f"{role}_bic_k_range")
+        ns_cov = getattr(args, f"{role}_gmm_covariance_type")
+        # If the role provides EITHER PCA flag, use only those; else fall back to defaults.
+        if ns_pca is not None or ns_var is not None:
+            pca_n, pca_var = ns_pca, ns_var
+        else:
+            pca_n, pca_var = base_pca, base_var
+        if ns_k is not None or ns_bic_raw is not None:
+            k_n, bic_k = ns_k, _parse_bic_k_range(ns_bic_raw)
+        else:
+            k_n, bic_k = base_k, base_bic
+        role_defaults = DEFAULT_ROLE_HYPERPARAMS[role]
+        if pca_n is None and pca_var is None:
+            pca_n = role_defaults["pca_n_components"]
+        if k_n is None and bic_k is None:
+            k_n = role_defaults["n_clusters"]
+        if (pca_n is None) == (pca_var is None):
+            raise SystemExit(
+                f"{role}: provide exactly one of pca_n_components or pca_variance_target."
+            )
+        if (k_n is None) == (bic_k is None):
+            raise SystemExit(
+                f"{role}: provide exactly one of n_clusters or bic_k_range."
+            )
+        return ArchetypeClusteringConfig(
+            pca_n_components=pca_n,
+            pca_variance_target=pca_var,
+            n_clusters=k_n,
+            bic_k_range=bic_k,
+            random_state=args.random_state,
+            n_init=args.n_init,
+            covariance_type=ns_cov or base_cov,
+        )
+
+    if args.role == "pitcher":
+        build_kw: dict = {"config": _resolve("pitcher")}
+    elif args.role == "batter":
+        build_kw = {"config": _resolve("batter")}
+    elif args.role == "catcher":
+        build_kw = {"config": _resolve("catcher")}
+    else:
+        pitcher_cfg = _resolve("pitcher")
+        batter_cfg = _resolve("batter")
+        catcher_cfg = _resolve("catcher")
+        if pitcher_cfg == batter_cfg == catcher_cfg:
+            build_kw = {"config": pitcher_cfg}
+        else:
+            build_kw = {
+                "configs_by_role": ArchetypeClusteringConfigsByRole(
+                    pitcher=pitcher_cfg,
+                    batter=batter_cfg,
+                    catcher=catcher_cfg,
+                )
+            }
+
+    result = build_gold_archetype_clustering(
+        bucket=args.bucket,
+        gold_prefix=args.gold_prefix,
+        start_year=args.start_year,
+        end_year=args.end_year,
+        role_filter=args.role,
+        **build_kw,
+    )
+
+    if result["status"] == "error":
+        logger.error(result["message"])
+        raise SystemExit(1)
+    if result["status"] == "no_data":
+        logger.warning(result["message"])
+        for err in result.get("errors", []):
+            logger.warning(err)
+    else:
+        logger.info(result["message"])
+        for err in result.get("errors", []):
+            if err:
+                logger.warning("Partial skip: %s", err)
 
 
 def handler(event: dict, context) -> dict:
-    from ..common.handlers import gold_archetype_clustering_handler
+    def _parse_optional_int(raw: str) -> Optional[int]:
+        s = str(raw).strip() if raw is not None else ""
+        return int(s) if s else None
 
-    return gold_archetype_clustering_handler(event, context)
+    def _parse_optional_float(raw: str) -> Optional[float]:
+        s = str(raw).strip() if raw is not None else ""
+        return float(s) if s else None
+
+    def _parse_optional_bic_range(raw: str) -> Optional[Tuple[int, int]]:
+        s = str(raw).strip() if raw is not None else ""
+        if not s:
+            return None
+        if ":" not in s:
+            raise ValueError(f"BIC_K_RANGE must be 'k_min:k_max'; got {raw!r}.")
+        lo_s, hi_s = s.split(":", 1)
+        try:
+            return int(lo_s), int(hi_s)
+        except ValueError as exc:
+            raise ValueError(f"BIC_K_RANGE values must be integers; got {raw!r}.") from exc
+
+    def _validate_cov(label: str, value: str) -> Optional[Dict[str, Any]]:
+        if value not in GMM_COVARIANCE_TYPES:
+            return {
+                "statusCode": 400,
+                "body": (
+                    f"{label} must be one of {list(GMM_COVARIANCE_TYPES)}; got {value!r}."
+                ),
+                "details": {},
+            }
+        return None
+
+    cy = current_utc_year()
+    cfg = PipelineSettings.from_environ()
+    start_year = event_or_env_int(event, "start_year", "START_YEAR", cy - 1)
+    end_year = event_or_env_int(event, "end_year", "END_YEAR", cy)
+    bucket = event_or_env_str(event, "s3_bucket", "S3_BUCKET", cfg.s3_bucket)
+    gold_prefix = event_or_env_str(event, "gold_prefix", "GOLD_PREFIX", cfg.gold_prefix)
+    role = event_or_env_str(event, "role", "ROLE", "all")
+
+    rs_raw = event_or_env_str(event, "random_state", "RANDOM_STATE", "42")
+    n_init_raw = event_or_env_str(event, "n_init", "N_INIT", "10")
+    cov_raw = str(
+        event_or_env_str(event, "gmm_covariance_type", "GMM_COVARIANCE_TYPE", "full")
+    ).strip()
+    err = _validate_cov("GMM_COVARIANCE_TYPE", cov_raw)
+    if err:
+        return err
+
+    try:
+        base_pca = _parse_optional_int(
+            event_or_env_str(event, "pca_n_components", "PCA_N_COMPONENTS", "")
+        )
+        base_var = _parse_optional_float(
+            event_or_env_str(event, "pca_variance_target", "PCA_VARIANCE_TARGET", "")
+        )
+        base_k = _parse_optional_int(
+            event_or_env_str(event, "n_clusters", "N_CLUSTERS", "")
+        )
+        base_bic = _parse_optional_bic_range(
+            event_or_env_str(event, "bic_k_range", "BIC_K_RANGE", "")
+        )
+    except ValueError as exc:
+        return {"statusCode": 400, "body": str(exc), "details": {}}
+
+    role_configs: Dict[str, ArchetypeClusteringConfig] = {}
+    for r in ("pitcher", "batter", "catcher"):
+        r_upper = r.upper()
+        try:
+            r_pca = _parse_optional_int(
+                event_or_env_str(event, f"{r}_pca_n_components", f"{r_upper}_PCA_N_COMPONENTS", "")
+            )
+            r_var = _parse_optional_float(
+                event_or_env_str(event, f"{r}_pca_variance_target", f"{r_upper}_PCA_VARIANCE_TARGET", "")
+            )
+            r_k = _parse_optional_int(
+                event_or_env_str(event, f"{r}_n_clusters", f"{r_upper}_N_CLUSTERS", "")
+            )
+            r_bic = _parse_optional_bic_range(
+                event_or_env_str(event, f"{r}_bic_k_range", f"{r_upper}_BIC_K_RANGE", "")
+            )
+        except ValueError as exc:
+            return {"statusCode": 400, "body": f"{r}: {exc}", "details": {}}
+        r_cov = str(
+            event_or_env_str(
+                event,
+                f"{r}_gmm_covariance_type",
+                f"{r_upper}_GMM_COVARIANCE_TYPE",
+                "",
+            )
+        ).strip() or cov_raw
+        err = _validate_cov(f"{r_upper}_GMM_COVARIANCE_TYPE", r_cov)
+        if err:
+            return err
+
+        pca_n = r_pca if (r_pca is not None or r_var is not None) else base_pca
+        pca_var = r_var if (r_pca is not None or r_var is not None) else base_var
+        k_n = r_k if (r_k is not None or r_bic is not None) else base_k
+        k_bic = r_bic if (r_k is not None or r_bic is not None) else base_bic
+
+        role_defaults = DEFAULT_ROLE_HYPERPARAMS[r]
+        if pca_n is None and pca_var is None:
+            pca_n = role_defaults["pca_n_components"]
+        if k_n is None and k_bic is None:
+            k_n = role_defaults["n_clusters"]
+
+        if role in (r, "all"):
+            if (pca_n is None) == (pca_var is None):
+                return {
+                    "statusCode": 400,
+                    "body": (
+                        f"{r}: provide exactly one of PCA_N_COMPONENTS/PCA_VARIANCE_TARGET "
+                        f"(or the {r_upper}_ override)."
+                    ),
+                    "details": {},
+                }
+            if (k_n is None) == (k_bic is None):
+                return {
+                    "statusCode": 400,
+                    "body": (
+                        f"{r}: provide exactly one of N_CLUSTERS/BIC_K_RANGE "
+                        f"(or the {r_upper}_ override)."
+                    ),
+                    "details": {},
+                }
+            try:
+                role_configs[r] = ArchetypeClusteringConfig(
+                    pca_n_components=pca_n,
+                    pca_variance_target=pca_var,
+                    n_clusters=k_n,
+                    bic_k_range=k_bic,
+                    random_state=int(rs_raw),
+                    n_init=int(n_init_raw),
+                    covariance_type=r_cov,
+                )
+            except ValueError as exc:
+                return {"statusCode": 400, "body": f"{r}: {exc}", "details": {}}
+
+    if role in ("pitcher", "batter", "catcher"):
+        build_kw: Dict[str, Any] = {"config": role_configs[role]}
+    else:
+        # role == "all"
+        pitcher_cfg = role_configs["pitcher"]
+        batter_cfg = role_configs["batter"]
+        catcher_cfg = role_configs["catcher"]
+        if pitcher_cfg == batter_cfg == catcher_cfg:
+            build_kw = {"config": pitcher_cfg}
+        else:
+            build_kw = {
+                "configs_by_role": ArchetypeClusteringConfigsByRole(
+                    pitcher=pitcher_cfg,
+                    batter=batter_cfg,
+                    catcher=catcher_cfg,
+                )
+            }
+
+    result = build_gold_archetype_clustering(
+        bucket=bucket,
+        gold_prefix=gold_prefix,
+        start_year=start_year,
+        end_year=end_year,
+        role_filter=role,
+        **build_kw,
+    )
+    status_code = 200 if result.get("status") in ("ok", "no_data") else 400
+    return {
+        "statusCode": status_code,
+        "body": result.get("message", ""),
+        "details": result,
+    }
 
 
 if __name__ == "__main__":

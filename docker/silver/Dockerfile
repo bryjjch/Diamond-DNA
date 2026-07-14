@@ -1,4 +1,4 @@
-# Silver layer — AWS Lambda: bronze → silver feature tables (src.data_pipeline.silver.feature_build).
+# Silver layer — AWS Lambda: bronze → silver feature tables (src.data_pipeline.silver.archetype_features.silver_features_build).
 # Build from repo root: docker build --platform linux/amd64 --provenance=false -f docker/silver/Dockerfile .
 # Stage 1: install dependencies inside the Lambda runtime image for ABI compatibility
 FROM public.ecr.aws/lambda/python:3.12 AS builder
@@ -13,4 +13,4 @@ FROM public.ecr.aws/lambda/python:3.12
 COPY --from=builder /install/ ${LAMBDA_TASK_ROOT}/
 COPY src/ ${LAMBDA_TASK_ROOT}/src/
 
-CMD ["src.data_pipeline.silver.feature_build.handler"]
+CMD ["src.data_pipeline.silver.archetype_features.silver_features_build.handler"]

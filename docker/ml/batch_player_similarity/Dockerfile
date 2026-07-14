@@ -1,4 +1,4 @@
-# ML layer — batch/ECS: CLI for player similarity KNN (python -m src.ml.player_similarity).
+# ML layer — batch/ECS: CLI for player similarity KNN (python -m src.ml.knn_neighbours.player_similarity).
 # Build from repo root:
 #   docker build --platform linux/amd64 -f docker/ml/batch_player_similarity/Dockerfile .
 FROM python:3.11-slim-bookworm
@@ -10,4 +10,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY src/ /app/src/
 
-ENTRYPOINT ["python", "-m", "src.ml.player_similarity"]
+ENTRYPOINT ["python", "-m", "src.ml.knn_neighbours.player_similarity"]

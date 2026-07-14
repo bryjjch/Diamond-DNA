@@ -9,7 +9,7 @@ from typing import Dict
 
 import pandas as pd
 
-from ...common.s3_interaction import raw_sprint_speed_key, read_parquet_from_s3
+from ....common.s3_helpers import read_parquet_from_s3
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ def build_sprint_speed_lookups_by_year(
     """
     sprint_lookup_by_year: Dict[int, Dict[int, float]] = {}
     for y in range(start_year, end_year + 1):
-        key = raw_sprint_speed_key(raw_running_prefix, y)
+        key = f"{raw_running_prefix.strip('/')}/year={y}/statcast_sprint_speed.parquet"
         running_df = read_parquet_from_s3(bucket, key, log_read=False, missing_key_log="none")
         if running_df is None or running_df.empty:
             continue

@@ -12,6 +12,7 @@ Default s3_prefix: bronze/defence
 
 from __future__ import annotations
 
+import argparse
 import io
 import logging
 from datetime import datetime, timezone
@@ -33,18 +34,10 @@ except Exception:
     statcast_outs_above_average = None
     sanitize_statcast_columns = None
 
-from .ingest_common import retry_with_backoff
-
-from ...common.s3_interaction import (
-    DEFENCE_ARM_STRENGTH_PARQUET,
-    DEFENCE_CATCHER_FRAMING_PARQUET,
-    DEFENCE_CATCHER_POPTIME_PARQUET,
-    DEFENCE_FRV_PARQUET,
-    DEFENCE_OAA_PARQUET,
-    DEFENCE_OUTFIELD_CATCH_PARQUET,
-    raw_defence_dataset_key,
-    write_parquet_to_s3,
-)
+from .ingest_helpers import retry_with_backoff
+from ...common.runtime_helpers import current_utc_year, event_or_env_int, event_or_env_str
+from ...common.s3_helpers import write_parquet_to_s3
+from ...common.settings import PipelineSettings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -161,7 +154,7 @@ def ingest_defence_year(
         lambda: fetch_oaa_all_positions(year, min_att=oaa_min_att),
     )
     if df_oaa is not None and not df_oaa.empty:
-        uploads.append((raw_defence_dataset_key(s3_prefix, year, DEFENCE_OAA_PARQUET), df_oaa))
+        uploads.append((f"{s3_prefix.strip('/')}/year={year}/statcast_oaa.parquet", df_oaa))
     elif df_oaa is None:
         errors.append(f"{year}: OAA fetch failed")
 
@@ -172,7 +165,10 @@ def ingest_defence_year(
     )
     if df_catch is not None and not df_catch.empty:
         uploads.append(
-            (raw_defence_dataset_key(s3_prefix, year, DEFENCE_OUTFIELD_CATCH_PARQUET), df_catch)
+            (
+                f"{s3_prefix.strip('/')}/year={year}/statcast_outfield_catch_probability.parquet",
+                df_catch,
+            )
         )
     elif df_catch is None:
         errors.append(f"{year}: outfield catch probability fetch failed")
@@ -184,7 +180,7 @@ def ingest_defence_year(
     )
     if df_pop is not None and not df_pop.empty:
         uploads.append(
-            (raw_defence_dataset_key(s3_prefix, year, DEFENCE_CATCHER_POPTIME_PARQUET), df_pop)
+            (f"{s3_prefix.strip('/')}/year={year}/statcast_catcher_poptime.parquet", df_pop)
         )
     elif df_pop is None:
         errors.append(f"{year}: catcher pop time fetch failed")
@@ -196,7 +192,7 @@ def ingest_defence_year(
     )
     if df_framing is not None and not df_framing.empty:
         uploads.append(
-            (raw_defence_dataset_key(s3_prefix, year, DEFENCE_CATCHER_FRAMING_PARQUET), df_framing)
+            (f"{s3_prefix.strip('/')}/year={year}/statcast_catcher_framing.parquet", df_framing)
         )
     elif df_framing is None:
         errors.append(f"{year}: catcher framing fetch failed")
@@ -208,7 +204,7 @@ def ingest_defence_year(
     )
     if df_arm is not None and not df_arm.empty:
         uploads.append(
-            (raw_defence_dataset_key(s3_prefix, year, DEFENCE_ARM_STRENGTH_PARQUET), df_arm)
+            (f"{s3_prefix.strip('/')}/year={year}/statcast_arm_strength.parquet", df_arm)
         )
     elif df_arm is None:
         errors.append(f"{year}: arm strength fetch failed")
@@ -220,7 +216,7 @@ def ingest_defence_year(
     )
     if df_frv is not None and not df_frv.empty:
         uploads.append(
-            (raw_defence_dataset_key(s3_prefix, year, DEFENCE_FRV_PARQUET), df_frv)
+            (f"{s3_prefix.strip('/')}/year={year}/statcast_fielding_run_value.parquet", df_frv)
         )
     elif df_frv is None:
         errors.append(f"{year}: fielding run value fetch failed")
@@ -305,15 +301,89 @@ def ingest_year_range(
 
 
 def main() -> None:
-    from ...common.cli import run_defence_ingestion_main
+    cfg = PipelineSettings.from_environ()
+    cy = current_utc_year()
+    parser = argparse.ArgumentParser(description="Ingest defensive metrics to S3 (year range).")
+    parser.add_argument("--start-year", type=int, default=cy - 3)
+    parser.add_argument("--end-year", type=int, default=cy)
+    parser.add_argument("--s3-bucket", type=str, default=cfg.s3_bucket)
+    parser.add_argument("--s3-prefix", type=str, default=cfg.raw_defence_prefix)
+    parser.add_argument(
+        "--oaa-min-att",
+        type=str,
+        default="q",
+        help='Statcast OAA minimum attempts: "q" (qualified) or an integer.',
+    )
+    parser.add_argument("--arm-min-throws", type=int, default=50)
+    parser.add_argument("--framing-min-called", type=str, default="q")
+    parser.add_argument("--pop-min-2b", type=int, default=5)
+    parser.add_argument("--pop-min-3b", type=int, default=0)
+    args = parser.parse_args()
 
-    run_defence_ingestion_main()
+    oaa_min: str | int = args.oaa_min_att
+    if oaa_min != "q" and str(oaa_min).isdigit():
+        oaa_min = int(oaa_min)
+
+    framing_min: str | int = args.framing_min_called
+    if framing_min != "q" and str(framing_min).isdigit():
+        framing_min = int(framing_min)
+
+    result = ingest_year_range(
+        args.start_year,
+        args.end_year,
+        args.s3_bucket,
+        args.s3_prefix,
+        oaa_min_att=oaa_min,
+        arm_min_throws=args.arm_min_throws,
+        framing_min_called=framing_min,
+        pop_min_2b=args.pop_min_2b,
+        pop_min_3b=args.pop_min_3b,
+    )
+
+    if result["status"] == "error":
+        logger.error(result["message"])
+        for err in result.get("errors", []):
+            logger.error(err)
+        raise SystemExit(1)
+    if result["status"] == "partial":
+        logger.warning(result["message"])
+        for err in result.get("errors", []):
+            logger.warning(err)
+        raise SystemExit(1)
+    logger.info(result["message"])
 
 
 def handler(event: dict, context: Any) -> dict:
-    from ...common.handlers import defence_ingestion_handler
+    cy = current_utc_year()
+    cfg = PipelineSettings.from_environ()
+    start_year = event_or_env_int(event, "start_year", "START_YEAR", cy - 3)
+    end_year = event_or_env_int(event, "end_year", "END_YEAR", cy)
+    s3_bucket = event_or_env_str(event, "s3_bucket", "S3_BUCKET", cfg.s3_bucket)
+    s3_prefix = event_or_env_str(
+        event, "s3_prefix", "S3_PREFIX", cfg.raw_defence_prefix
+    )
 
-    return defence_ingestion_handler(event, context)
+    # "q" (qualified) or an integer threshold; empty falls back to "q".
+    oaa_s = str(event_or_env_str(event, "oaa_min_att", "OAA_MIN_ATT", "q")).strip() or "q"
+    oaa_min: str | int = int(oaa_s) if oaa_s.isdigit() else oaa_s
+    framing_s = (
+        str(event_or_env_str(event, "framing_min_called", "FRAMING_MIN_CALLED", "q")).strip() or "q"
+    )
+    framing_min: str | int = int(framing_s) if framing_s.isdigit() else framing_s
+
+    result = ingest_year_range(
+        start_year,
+        end_year,
+        s3_bucket,
+        s3_prefix,
+        oaa_min_att=oaa_min,
+        arm_min_throws=event_or_env_int(event, "arm_min_throws", "ARM_MIN_THROWS", 50),
+        framing_min_called=framing_min,
+        pop_min_2b=event_or_env_int(event, "pop_min_2b", "POP_MIN_2B", 5),
+        pop_min_3b=event_or_env_int(event, "pop_min_3b", "POP_MIN_3B", 0),
+    )
+    status_code = 200 if result["status"] == "ok" else (207 if result["status"] == "partial" else 400)
+    return {"statusCode": status_code, **result}
 
 
 if __name__ == "__main__":

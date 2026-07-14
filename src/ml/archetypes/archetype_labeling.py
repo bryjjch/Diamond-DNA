@@ -22,7 +22,7 @@ import boto3
 import numpy as np
 import pandas as pd
 
-from ..common.s3_interaction import get_s3_client
+from ...common.s3_helpers import get_s3_client
 
 logger = logging.getLogger(__name__)
 

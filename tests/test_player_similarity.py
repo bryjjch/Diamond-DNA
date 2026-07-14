@@ -7,8 +7,8 @@ import pandas as pd
 import pytest
 from sklearn.datasets import make_blobs
 
-from src.ml.archetype_clustering import ArchetypeClusteringConfig, fit_archetype_clustering
-from src.ml.player_similarity import (
+from src.ml.archetypes.archetype_clustering import ArchetypeClusteringConfig, fit_archetype_clustering
+from src.ml.knn_neighbours.player_similarity import (
     PlayerSimilarityConfig,
     build_gold_player_similarity,
     build_neighbor_long_table,
@@ -122,9 +122,9 @@ def test_build_gold_player_similarity_missing_model_records_error(monkeypatch):
             return gold_df.copy()
         return None
 
-    monkeypatch.setattr("src.ml.player_similarity.read_parquet_from_s3", fake_read)
+    monkeypatch.setattr("src.ml.knn_neighbours.player_similarity.read_parquet_from_s3", fake_read)
     monkeypatch.setattr(
-        "src.ml.player_similarity.load_archetype_clustering_bundle_from_s3",
+        "src.ml.knn_neighbours.player_similarity.load_archetype_clustering_bundle_from_s3",
         lambda bucket, key: None,
     )
 
@@ -163,13 +163,13 @@ def test_build_gold_player_similarity_writes_artifacts(monkeypatch):
     def fake_write_json(bucket, key, payload):
         json_writes[key] = json.loads(json.dumps(payload, default=str))
 
-    monkeypatch.setattr("src.ml.player_similarity.read_parquet_from_s3", fake_read_parquet)
-    monkeypatch.setattr("src.ml.player_similarity.write_parquet_to_s3", fake_write_parquet)
+    monkeypatch.setattr("src.ml.knn_neighbours.player_similarity.read_parquet_from_s3", fake_read_parquet)
+    monkeypatch.setattr("src.ml.knn_neighbours.player_similarity.write_parquet_to_s3", fake_write_parquet)
     monkeypatch.setattr(
-        "src.ml.player_similarity.load_archetype_clustering_bundle_from_s3",
+        "src.ml.knn_neighbours.player_similarity.load_archetype_clustering_bundle_from_s3",
         lambda b, k: bundle,
     )
-    monkeypatch.setattr("src.ml.player_similarity._write_json_to_s3", fake_write_json)
+    monkeypatch.setattr("src.ml.knn_neighbours.player_similarity._write_json_to_s3", fake_write_json)
 
     result = build_gold_player_similarity(
         bucket="test-bucket",

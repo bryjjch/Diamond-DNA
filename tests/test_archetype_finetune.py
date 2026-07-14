@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from src.ml.archetype_finetune import (
+from src.ml.archetypes.archetype_finetune import (
     grid_sweep_pca_and_gmm,
     grid_sweep_pca_and_k,
     scaled_feature_matrix,

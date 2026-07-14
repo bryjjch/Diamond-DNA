@@ -299,7 +299,7 @@ resource "aws_lambda_function" "statcast_ingestion" {
   tags = var.tags
 }
 
-# Silver feature build Lambda (container: data_pipeline.silver.feature_build)
+# Silver feature build Lambda (container: data_pipeline.silver.archetype_features.silver_features_build)
 # Build: docker build --platform linux/amd64 --provenance=false -f docker/silver/Dockerfile -t <ecr_url>:<tag> .
 resource "aws_lambda_function" "silver_feature_build" {
   function_name = "${var.name_prefix}-silver-feature-build"
@@ -339,7 +339,7 @@ resource "aws_lambda_function" "silver_standard_stats" {
   image_uri     = "${aws_ecr_repository.silver_feature_build.repository_url}:${var.silver_image_tag}"
 
   image_config {
-    command = ["src.data_pipeline.silver.standard_stats_player_year.handler"]
+    command = ["src.data_pipeline.silver.standard_stats.silver_standard_player_year_stats.handler"]
   }
 
   memory_size = var.silver_memory_size
@@ -358,7 +358,7 @@ resource "aws_lambda_function" "silver_standard_stats" {
   tags = var.tags
 }
 
-# Gold preprocessing Lambda (container: data_pipeline.gold.preprocessing)
+# Gold preprocessing Lambda (container: data_pipeline.gold.gold_preprocessing)
 # Build: docker build --platform linux/amd64 --provenance=false -f docker/gold/Dockerfile -t <ecr_url>:<tag> .
 resource "aws_lambda_function" "gold_preprocessing" {
   function_name = "${var.name_prefix}-gold-preprocessing"
