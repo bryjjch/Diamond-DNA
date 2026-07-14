@@ -37,6 +37,12 @@ variable "raw_bio_s3_prefix" {
   default     = "bronze/bio"
 }
 
+variable "raw_standard_stats_s3_prefix" {
+  description = "S3 prefix for bronze standard season stat lines (batting/pitching)"
+  type        = string
+  default     = "bronze/standard_stats"
+}
+
 variable "silver_s3_prefix" {
   description = "S3 prefix for silver player-year feature tables (e.g. silver)"
   type        = string

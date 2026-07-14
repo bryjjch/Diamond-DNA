@@ -437,6 +437,69 @@ def run_bio_ingestion_main() -> None:
     logger.info(result["message"])
 
 
+def run_standard_stats_ingestion_main() -> None:
+    from ..data_pipeline.bronze.standard_stats_ingestion import ingest_year_range
+
+    cfg = PipelineSettings.from_environ()
+    cy = current_utc_year()
+    parser = argparse.ArgumentParser(
+        description="Ingest MLB Stats API standard season stat lines to S3 (year range)."
+    )
+    parser.add_argument("--start-year", type=int, default=cy - 3)
+    parser.add_argument("--end-year", type=int, default=cy)
+    parser.add_argument("--s3-bucket", type=str, default=cfg.s3_bucket)
+    parser.add_argument("--s3-prefix", type=str, default=cfg.raw_standard_stats_prefix)
+    args = parser.parse_args()
+
+    result = ingest_year_range(args.start_year, args.end_year, args.s3_bucket, args.s3_prefix)
+
+    if result["status"] == "error":
+        logger.error(result["message"])
+        for err in result.get("errors", []):
+            logger.error(err)
+        raise SystemExit(1)
+    if result["status"] == "partial":
+        logger.warning(result["message"])
+        for err in result.get("errors", []):
+            logger.warning(err)
+        raise SystemExit(1)
+    logger.info(result["message"])
+
+
+def run_standard_stats_silver_main() -> None:
+    from ..data_pipeline.silver.standard_stats_player_year import build_standard_stats_range
+
+    cfg = PipelineSettings.from_environ()
+    cy = current_utc_year()
+    parser = argparse.ArgumentParser(
+        description="Build silver standard stat-line tables from bronze standard stats (year range)."
+    )
+    parser.add_argument("--start-year", type=int, default=cy - 1)
+    parser.add_argument("--end-year", type=int, default=cy)
+    parser.add_argument("--bucket", type=str, default=cfg.s3_bucket)
+    parser.add_argument(
+        "--raw-standard-stats-prefix", type=str, default=cfg.raw_standard_stats_prefix
+    )
+    parser.add_argument("--silver-prefix", type=str, default=cfg.feature_prefix)
+    args = parser.parse_args()
+
+    result = build_standard_stats_range(
+        bucket=args.bucket,
+        raw_standard_stats_prefix=args.raw_standard_stats_prefix,
+        silver_prefix=args.silver_prefix,
+        start_year=args.start_year,
+        end_year=args.end_year,
+    )
+
+    if result["status"] == "error":
+        logger.error(result["message"])
+        raise SystemExit(1)
+    if result["status"] == "no_data":
+        logger.warning(result["message"])
+    else:
+        logger.info(result["message"])
+
+
 def run_bronze_ingestion_main() -> None:
     from ..data_pipeline.bronze.bronze_ingestion import ALL_SOURCES, ingest_all_bronze
 
@@ -468,11 +531,12 @@ def run_bronze_ingestion_main() -> None:
     parser.add_argument("--running-prefix", type=str, default=cfg.raw_running_prefix)
     parser.add_argument("--defence-prefix", type=str, default=cfg.raw_defence_prefix)
     parser.add_argument("--bio-prefix", type=str, default=cfg.raw_bio_prefix)
+    parser.add_argument("--standard-prefix", type=str, default=cfg.raw_standard_stats_prefix)
     parser.add_argument(
         "--sources",
         type=str,
         default=",".join(ALL_SOURCES),
-        help="Comma-separated subset of sources to run (statcast,running,defence,bio).",
+        help="Comma-separated subset of sources to run (statcast,running,defence,bio,standard).",
     )
     # running tuning
     parser.add_argument("--min-opp", type=int, default=10)
@@ -505,6 +569,7 @@ def run_bronze_ingestion_main() -> None:
         running_prefix=args.running_prefix,
         defence_prefix=args.defence_prefix,
         bio_prefix=args.bio_prefix,
+        standard_prefix=args.standard_prefix,
         start_date_str=args.start_date,
         end_date_str=args.end_date,
         start_year=args.start_year,

@@ -77,6 +77,8 @@ resource "aws_iam_role_policy" "statcast_ingestion_s3_access" {
           "${var.data_lake_bucket_arn}/${var.s3_prefix}/*",
           "${var.data_lake_bucket_arn}/${var.raw_running_s3_prefix}/*",
           "${var.data_lake_bucket_arn}/${var.raw_defence_s3_prefix}/*",
+          "${var.data_lake_bucket_arn}/${var.raw_bio_s3_prefix}/*",
+          "${var.data_lake_bucket_arn}/${var.raw_standard_stats_s3_prefix}/*",
         ]
       }
     ]
@@ -129,6 +131,8 @@ resource "aws_iam_role_policy" "silver_feature_build_s3_access" {
               "${var.s3_prefix}/*",
               "${var.raw_running_s3_prefix}/*",
               "${var.raw_defence_s3_prefix}/*",
+              "${var.raw_bio_s3_prefix}/*",
+              "${var.raw_standard_stats_s3_prefix}/*",
               "${var.silver_s3_prefix}/*",
               "${var.gold_s3_prefix}/*",
             ]
@@ -144,6 +148,8 @@ resource "aws_iam_role_policy" "silver_feature_build_s3_access" {
           "${var.data_lake_bucket_arn}/${var.s3_prefix}/*",
           "${var.data_lake_bucket_arn}/${var.raw_running_s3_prefix}/*",
           "${var.data_lake_bucket_arn}/${var.raw_defence_s3_prefix}/*",
+          "${var.data_lake_bucket_arn}/${var.raw_bio_s3_prefix}/*",
+          "${var.data_lake_bucket_arn}/${var.raw_standard_stats_s3_prefix}/*",
         ]
       },
       {
@@ -255,6 +261,13 @@ resource "aws_cloudwatch_log_group" "gold_preprocessing" {
   tags              = var.tags
 }
 
+# CloudWatch log group for the silver standard stat-line build Lambda
+resource "aws_cloudwatch_log_group" "silver_standard_stats" {
+  name              = "/aws/lambda/${var.name_prefix}-silver-standard-stats"
+  retention_in_days = var.log_retention_days
+  tags              = var.tags
+}
+
 # Bronze ingestion Lambda (container image from ECR)
 # Build: docker build --platform linux/amd64 --provenance=false -f docker/bronze/Dockerfile -t <ecr_url>:<tag> .
 # Push:  aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <account>.dkr.ecr.<region>.amazonaws.com
@@ -270,13 +283,14 @@ resource "aws_lambda_function" "statcast_ingestion" {
 
   environment {
     variables = {
-      S3_BUCKET           = var.data_lake_bucket_name
-      S3_PREFIX           = var.s3_prefix
-      RAW_RUNNING_PREFIX  = var.raw_running_s3_prefix
-      RAW_DEFENCE_PREFIX  = var.raw_defence_s3_prefix
-      RAW_BIO_PREFIX      = var.raw_bio_s3_prefix
-      PYBASEBALL_NO_CACHE = "true"
-      HOME                = "/tmp"
+      S3_BUCKET                = var.data_lake_bucket_name
+      S3_PREFIX                = var.s3_prefix
+      RAW_RUNNING_PREFIX       = var.raw_running_s3_prefix
+      RAW_DEFENCE_PREFIX       = var.raw_defence_s3_prefix
+      RAW_BIO_PREFIX           = var.raw_bio_s3_prefix
+      RAW_STANDARD_STATS_PREFIX = var.raw_standard_stats_s3_prefix
+      PYBASEBALL_NO_CACHE      = "true"
+      HOME                     = "/tmp"
     }
   }
 
@@ -298,18 +312,48 @@ resource "aws_lambda_function" "silver_feature_build" {
 
   environment {
     variables = {
-      S3_BUCKET          = var.data_lake_bucket_name
-      RAW_PREFIX         = var.s3_prefix
-      RAW_RUNNING_PREFIX = var.raw_running_s3_prefix
-      RAW_DEFENCE_PREFIX = var.raw_defence_s3_prefix
-      RAW_BIO_PREFIX     = var.raw_bio_s3_prefix
-      FEATURE_PREFIX     = var.silver_s3_prefix
-      GOLD_PREFIX        = var.gold_s3_prefix
-      YEAR_TO_DATE       = "true"
+      S3_BUCKET                = var.data_lake_bucket_name
+      RAW_PREFIX               = var.s3_prefix
+      RAW_RUNNING_PREFIX       = var.raw_running_s3_prefix
+      RAW_DEFENCE_PREFIX       = var.raw_defence_s3_prefix
+      RAW_BIO_PREFIX           = var.raw_bio_s3_prefix
+      RAW_STANDARD_STATS_PREFIX = var.raw_standard_stats_s3_prefix
+      FEATURE_PREFIX           = var.silver_s3_prefix
+      GOLD_PREFIX              = var.gold_s3_prefix
+      YEAR_TO_DATE             = "true"
     }
   }
 
   depends_on = [aws_cloudwatch_log_group.silver_feature_build]
+
+  tags = var.tags
+}
+
+# Silver standard stat-line build Lambda.
+# Reuses the silver feature-build container image, overriding the entrypoint command to
+# the standard-stats handler. Produces the standalone standard stat-line silver table.
+resource "aws_lambda_function" "silver_standard_stats" {
+  function_name = "${var.name_prefix}-silver-standard-stats"
+  role          = aws_iam_role.silver_feature_build.arn
+  package_type  = "Image"
+  image_uri     = "${aws_ecr_repository.silver_feature_build.repository_url}:${var.silver_image_tag}"
+
+  image_config {
+    command = ["src.data_pipeline.silver.standard_stats_player_year.handler"]
+  }
+
+  memory_size = var.silver_memory_size
+  timeout     = var.silver_timeout
+
+  environment {
+    variables = {
+      S3_BUCKET                 = var.data_lake_bucket_name
+      RAW_STANDARD_STATS_PREFIX = var.raw_standard_stats_s3_prefix
+      FEATURE_PREFIX            = var.silver_s3_prefix
+    }
+  }
+
+  depends_on = [aws_cloudwatch_log_group.silver_standard_stats]
 
   tags = var.tags
 }
@@ -378,6 +422,22 @@ resource "aws_lambda_permission" "silver_feature_build_eventbridge" {
   statement_id  = "AllowExecutionFromEventBridgeSilver"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.silver_feature_build.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.silver_feature_build.arn
+}
+
+# EventBridge target for silver standard stat-line build (reuses the silver schedule;
+# it also reads bronze and writes silver, with no ordering dependency on feature build).
+resource "aws_cloudwatch_event_target" "silver_standard_stats" {
+  rule      = aws_cloudwatch_event_rule.silver_feature_build.name
+  target_id = "SilverStandardStatsLambda"
+  arn       = aws_lambda_function.silver_standard_stats.arn
+}
+
+resource "aws_lambda_permission" "silver_standard_stats_eventbridge" {
+  statement_id  = "AllowExecutionFromEventBridgeSilverStandardStats"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.silver_standard_stats.function_name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.silver_feature_build.arn
 }

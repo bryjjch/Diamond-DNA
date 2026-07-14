@@ -1,6 +1,6 @@
 """Tests for the bronze ingestion orchestrator (ingest_all_bronze).
 
-The four underlying source functions are monkeypatched so no network / S3 is touched;
+The underlying source functions are monkeypatched so no network / S3 is touched;
 we only exercise the aggregation, year-derivation, and source-filtering logic.
 """
 
@@ -10,11 +10,12 @@ from src.data_pipeline.bronze import (
     bio_ingestion,
     bronze_ingestion,
     defence_ingestion,
+    standard_stats_ingestion,
     statcast_ingestion,
     statcast_running_ingestion,
 )
 
-ALL = {"statcast", "running", "defence", "bio"}
+ALL = {"statcast", "running", "defence", "bio", "standard"}
 
 
 @pytest.fixture
@@ -31,13 +32,16 @@ def patched_sources(monkeypatch):
 
     state = {"calls": calls, "make": make, "monkeypatch": monkeypatch}
 
-    def set_status(statcast="ok", running="ok", defence="ok", bio="ok"):
+    def set_status(statcast="ok", running="ok", defence="ok", bio="ok", standard="ok"):
         monkeypatch.setattr(statcast_ingestion, "ingest_date_range", make("statcast", statcast))
         monkeypatch.setattr(
             statcast_running_ingestion, "ingest_year_range", make("running", running)
         )
         monkeypatch.setattr(defence_ingestion, "ingest_year_range", make("defence", defence))
         monkeypatch.setattr(bio_ingestion, "ingest_year_range", make("bio", bio))
+        monkeypatch.setattr(
+            standard_stats_ingestion, "ingest_year_range", make("standard", standard)
+        )
 
     state["set_status"] = set_status
     return state
@@ -50,6 +54,7 @@ def _ingest(**overrides):
         running_prefix="bronze/statcast_running",
         defence_prefix="bronze/defence",
         bio_prefix="bronze/bio",
+        standard_prefix="bronze/standard_stats",
         start_date_str="2026-06-19",
         end_date_str="2026-06-19",
     )
@@ -77,7 +82,7 @@ def test_one_source_error_is_partial(patched_sources):
 
 def test_all_error(patched_sources):
     patched_sources["set_status"](
-        statcast="error", running="error", defence="error", bio="error"
+        statcast="error", running="error", defence="error", bio="error", standard="error"
     )
     result = _ingest()
     assert result["status"] == "error"
@@ -106,6 +111,7 @@ def test_years_derived_from_dates(patched_sources):
     assert patched_sources["calls"]["running"]["args"][:2] == (2024, 2025)
     assert patched_sources["calls"]["defence"]["args"][:2] == (2024, 2025)
     assert patched_sources["calls"]["bio"]["args"][:2] == (2024, 2025)
+    assert patched_sources["calls"]["standard"]["args"][:2] == (2024, 2025)
 
 
 def test_explicit_years_override_dates(patched_sources):
@@ -121,6 +127,7 @@ def test_sources_filter_skips_unselected(patched_sources):
     assert "running" not in patched_sources["calls"]
     assert "defence" not in patched_sources["calls"]
     assert "bio" not in patched_sources["calls"]
+    assert "standard" not in patched_sources["calls"]
 
 
 def test_unknown_source_is_error(patched_sources):
