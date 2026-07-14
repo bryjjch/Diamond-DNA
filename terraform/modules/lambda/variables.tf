@@ -31,6 +31,12 @@ variable "raw_defence_s3_prefix" {
   default     = "bronze/defence"
 }
 
+variable "raw_bio_s3_prefix" {
+  description = "S3 prefix for bronze MLB player bios read by silver feature build"
+  type        = string
+  default     = "bronze/bio"
+}
+
 variable "silver_s3_prefix" {
   description = "S3 prefix for silver player-year feature tables (e.g. silver)"
   type        = string
