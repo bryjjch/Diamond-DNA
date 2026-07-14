@@ -76,7 +76,7 @@ src/
   api/                  # HTTP API Lambda handler
   common/               # shared S3 / settings / runtime helpers; CLI + Lambda handler wrappers
   data_pipeline/        # bronze → silver → gold ETL
-    bronze/             # daily Statcast / running / defence ingest
+    bronze/             # daily Statcast / running / defence / player-bio ingest
     silver/             # bronze → silver feature build
     gold/               # silver → gold preprocessing
   ml/                   # archetype clustering, KNN similarity
