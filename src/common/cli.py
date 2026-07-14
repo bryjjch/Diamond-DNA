@@ -408,6 +408,35 @@ def run_statcast_running_ingestion_main() -> None:
     logger.info(result["message"])
 
 
+def run_bio_ingestion_main() -> None:
+    from ..data_pipeline.bronze.bio_ingestion import ingest_year_range
+
+    cfg = PipelineSettings.from_environ()
+    cy = current_utc_year()
+    parser = argparse.ArgumentParser(
+        description="Ingest MLB Stats API player bios to S3 (year range)."
+    )
+    parser.add_argument("--start-year", type=int, default=cy - 3)
+    parser.add_argument("--end-year", type=int, default=cy)
+    parser.add_argument("--s3-bucket", type=str, default=cfg.s3_bucket)
+    parser.add_argument("--s3-prefix", type=str, default=cfg.raw_bio_prefix)
+    args = parser.parse_args()
+
+    result = ingest_year_range(args.start_year, args.end_year, args.s3_bucket, args.s3_prefix)
+
+    if result["status"] == "error":
+        logger.error(result["message"])
+        for err in result.get("errors", []):
+            logger.error(err)
+        raise SystemExit(1)
+    if result["status"] == "partial":
+        logger.warning(result["message"])
+        for err in result.get("errors", []):
+            logger.warning(err)
+        raise SystemExit(1)
+    logger.info(result["message"])
+
+
 def run_bronze_ingestion_main() -> None:
     from ..data_pipeline.bronze.bronze_ingestion import ALL_SOURCES, ingest_all_bronze
 
@@ -416,8 +445,8 @@ def run_bronze_ingestion_main() -> None:
     parser = argparse.ArgumentParser(
         description=(
             "Run all bronze ingestion sources (statcast pitches, sprint-speed running, "
-            "defence) in one call. Statcast uses the date range; running/defence use the "
-            "year range, which defaults to the years spanned by the date range."
+            "defence, player bios) in one call. Statcast uses the date range; the other "
+            "sources use the year range, which defaults to the years spanned by the date range."
         )
     )
     parser.add_argument("--start-date", type=str, default=yesterday)
@@ -438,11 +467,12 @@ def run_bronze_ingestion_main() -> None:
     parser.add_argument("--statcast-prefix", type=str, default=cfg.raw_statcast_prefix)
     parser.add_argument("--running-prefix", type=str, default=cfg.raw_running_prefix)
     parser.add_argument("--defence-prefix", type=str, default=cfg.raw_defence_prefix)
+    parser.add_argument("--bio-prefix", type=str, default=cfg.raw_bio_prefix)
     parser.add_argument(
         "--sources",
         type=str,
         default=",".join(ALL_SOURCES),
-        help="Comma-separated subset of sources to run (statcast,running,defence).",
+        help="Comma-separated subset of sources to run (statcast,running,defence,bio).",
     )
     # running tuning
     parser.add_argument("--min-opp", type=int, default=10)
@@ -474,6 +504,7 @@ def run_bronze_ingestion_main() -> None:
         statcast_prefix=args.statcast_prefix,
         running_prefix=args.running_prefix,
         defence_prefix=args.defence_prefix,
+        bio_prefix=args.bio_prefix,
         start_date_str=args.start_date,
         end_date_str=args.end_date,
         start_year=args.start_year,
@@ -572,6 +603,7 @@ def run_bronze_to_silver_features_main() -> None:
     parser.add_argument("--raw-running-prefix", type=str, default=cfg.raw_running_prefix)
     parser.add_argument("--sprint-speed-min-opp", type=int, default=10)
     parser.add_argument("--raw-defence-prefix", type=str, default=cfg.raw_defence_prefix)
+    parser.add_argument("--raw-bio-prefix", type=str, default=cfg.raw_bio_prefix)
     args = parser.parse_args()
 
     result = build_bronze_to_silver_features(
@@ -589,6 +621,7 @@ def run_bronze_to_silver_features_main() -> None:
         raw_running_prefix=args.raw_running_prefix,
         sprint_speed_min_opp=args.sprint_speed_min_opp,
         raw_defence_prefix=args.raw_defence_prefix,
+        raw_bio_prefix=args.raw_bio_prefix,
     )
 
     if result["status"] == "error":

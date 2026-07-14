@@ -76,6 +76,10 @@ def is_column_excluded_from_archetype_training_features(col: str) -> bool:
     # Imputation flags.
     if col.endswith("_was_missing"):
         return True
+    # Bio ride-along columns (age, height, weight, birth info) are inputs for
+    # projection models, not archetype shape.
+    if col.startswith("bio_"):
+        return True
     # Pitch-type physics columns.
     if col.startswith("pt_"):
         return True

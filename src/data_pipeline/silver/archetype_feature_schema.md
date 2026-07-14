@@ -122,6 +122,16 @@ Running:
 - `sprint_speed_mean` (from player-year sprint-speed lookup when provided; otherwise
   from pitch-level `sprint_speed` if present; else NA)
 
+## Bio columns (both roles)
+Merged from the bronze player-bio layer (MLB Stats API), keyed by MLBAM player id.
+Prefixed `bio_` and **excluded from gold archetype training features**; they ride
+through silver as inputs for projection models and display:
+- `bio_age` (seasonal age: the player's age on June 30 of the season)
+- `bio_height_in`
+- `bio_weight_lb`
+- `bio_birth_date` (`YYYY-MM-DD`; empty string if unknown)
+- `bio_birth_place` (`City, State, Country`; empty string if unknown)
+
 ## Filtering behavior
 Rows may be omitted if sample sizes are too small:
 - Pitchers: omitted if `n_pitches_total < --min-pitches-pitcher`

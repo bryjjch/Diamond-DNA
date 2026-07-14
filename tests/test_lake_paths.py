@@ -12,6 +12,7 @@ from src.common.s3_interaction import (
     gold_player_year_output_key,
     gold_preprocessing_metadata_key,
     raw_defence_dataset_key,
+    raw_player_bio_key,
     raw_sprint_speed_key,
     raw_statcast_day_key,
 )
@@ -38,6 +39,10 @@ def test_feature_player_year_output_key():
 
 def test_raw_sprint_speed_key():
     assert raw_sprint_speed_key("raw/run", 2025) == "raw/run/year=2025/statcast_sprint_speed.parquet"
+
+
+def test_raw_player_bio_key():
+    assert raw_player_bio_key("bronze/bio", 2024) == "bronze/bio/year=2024/mlb_player_bios.parquet"
 
 
 def test_raw_defence_dataset_key():

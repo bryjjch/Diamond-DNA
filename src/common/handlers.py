@@ -349,6 +349,21 @@ def statcast_running_ingestion_handler(event: Dict[str, Any], context: Any) -> D
     return {"statusCode": status_code, **result}
 
 
+def bio_ingestion_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    from ..data_pipeline.bronze.bio_ingestion import ingest_year_range
+
+    cy = current_utc_year()
+    cfg = PipelineSettings.from_environ()
+    start_year = event_or_env_int(event, "start_year", "START_YEAR", cy - 3)
+    end_year = event_or_env_int(event, "end_year", "END_YEAR", cy)
+    s3_bucket = event_or_env_str(event, "s3_bucket", "S3_BUCKET", cfg.s3_bucket)
+    s3_prefix = event_or_env_str(event, "s3_prefix", "S3_PREFIX", cfg.raw_bio_prefix)
+
+    result = ingest_year_range(start_year, end_year, s3_bucket, s3_prefix)
+    status_code = 200 if result["status"] == "ok" else (207 if result["status"] == "partial" else 400)
+    return {"statusCode": status_code, **result}
+
+
 def bronze_ingestion_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     from ..data_pipeline.bronze.bronze_ingestion import ALL_SOURCES, ingest_all_bronze
 
@@ -366,6 +381,7 @@ def bronze_ingestion_handler(event: Dict[str, Any], context: Any) -> Dict[str, A
     defence_prefix = event_or_env_str(
         event, "defence_prefix", "RAW_DEFENCE_PREFIX", cfg.raw_defence_prefix
     )
+    bio_prefix = event_or_env_str(event, "bio_prefix", "RAW_BIO_PREFIX", cfg.raw_bio_prefix)
 
     # Year range is optional; empty -> None so the orchestrator derives it from the dates.
     sy_raw = event_or_env_str(event, "start_year", "START_YEAR", "")
@@ -397,6 +413,7 @@ def bronze_ingestion_handler(event: Dict[str, Any], context: Any) -> Dict[str, A
         statcast_prefix=statcast_prefix,
         running_prefix=running_prefix,
         defence_prefix=defence_prefix,
+        bio_prefix=bio_prefix,
         start_date_str=start_date,
         end_date_str=end_date,
         start_year=start_year,
@@ -468,6 +485,7 @@ def bronze_to_silver_features_handler(event: Dict[str, Any], context: Any) -> Di
     raw_defence = event_or_env_str(
         event, "raw_defence_prefix", "RAW_DEFENCE_PREFIX", cfg.raw_defence_prefix
     )
+    raw_bio = event_or_env_str(event, "raw_bio_prefix", "RAW_BIO_PREFIX", cfg.raw_bio_prefix)
     yt_raw = event_or_env_str(event, "year_to_date", "YEAR_TO_DATE", "true")
     year_to_date = str(yt_raw).strip().lower() not in ("0", "false", "no")
 
@@ -480,6 +498,7 @@ def bronze_to_silver_features_handler(event: Dict[str, Any], context: Any) -> Di
         year_to_date=year_to_date,
         raw_running_prefix=raw_running,
         raw_defence_prefix=raw_defence,
+        raw_bio_prefix=raw_bio,
     )
 
     status_code = 200 if result.get("status") in ("ok", "no_data") else 400

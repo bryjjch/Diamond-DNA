@@ -6,8 +6,9 @@ Runs every bronze-layer ingestion source in a single call:
   - statcast: pitch-by-pitch Statcast data (date range; one file per day)
   - running:  Statcast sprint-speed leaderboard (year range)
   - defence:  defensive metrics leaderboards (year range)
+  - bio:      MLB Stats API player bios (year range)
 
-Statcast is date-scoped; running and defence are season (year) leaderboards. When the
+Statcast is date-scoped; the other sources are season (year) scoped. When the
 year range is not supplied explicitly, it is derived from the date range so a single
 date window drives every source. Each source runs independently: a failure in one does
 not abort the others, and the aggregated status reflects the worst outcome.
@@ -20,7 +21,7 @@ from typing import Any, Dict, Optional, Sequence
 
 logger = logging.getLogger(__name__)
 
-ALL_SOURCES = ("statcast", "running", "defence")
+ALL_SOURCES = ("statcast", "running", "defence", "bio")
 
 
 def _year_from_date_str(date_str: str) -> int:
@@ -37,6 +38,7 @@ def ingest_all_bronze(
     statcast_prefix: str,
     running_prefix: str,
     defence_prefix: str,
+    bio_prefix: str,
     start_date_str: str,
     end_date_str: str,
     start_year: Optional[int] = None,
@@ -58,6 +60,7 @@ def ingest_all_bronze(
       sources: {source_name: raw sub-result dict}
       errors:  flattened, source-prefixed error strings
     """
+    from .bio_ingestion import ingest_year_range as ingest_bio_year_range
     from .statcast_ingestion import ingest_date_range
     from .statcast_running_ingestion import ingest_year_range as ingest_running_year_range
     from .defence_ingestion import ingest_year_range as ingest_defence_year_range
@@ -94,6 +97,7 @@ def ingest_all_bronze(
             pop_min_2b=pop_min_2b,
             pop_min_3b=pop_min_3b,
         ),
+        "bio": lambda: ingest_bio_year_range(sy, ey, s3_bucket, bio_prefix),
     }
 
     results: Dict[str, Any] = {}

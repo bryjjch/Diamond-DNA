@@ -23,6 +23,7 @@ from ...common.s3_interaction import (
     read_parquet_from_s3,
     write_parquet_to_s3,
 )
+from .bio_player_year import load_player_bios_by_year, merge_bio_into_row
 from .build_player_year_archetype_rows import (
     _validate_feature_row,
     player_year_features_from_df,
@@ -121,9 +122,10 @@ def build_bronze_to_silver_features(
     min_batted_ball_batter: int = 200,
     hard_hit_speed_mph: float = 95.0,
     min_pitches_per_pitch_type: int = 15,
-    raw_running_prefix: str,
+    raw_running_prefix: str = "bronze/statcast_running",
     sprint_speed_min_opp: int = 10,
-    raw_defence_prefix: str,
+    raw_defence_prefix: str = "bronze/defence",
+    raw_bio_prefix: str = "bronze/bio"
 ) -> Dict[str, object]:
     """
     Build silver player-year feature tables from bronze Statcast dailies.
@@ -203,6 +205,12 @@ def build_bronze_to_silver_features(
             exc,
         )
 
+    # Player bios apply to both roles; load once per year.
+    bios_by_year: Dict[int, Dict[int, Dict[str, object]]] = {
+        y: load_player_bios_by_year(bucket, raw_bio_prefix, y)
+        for y in range(year_lo, year_hi + 1)
+    }
+
     years_written: List[int] = []
     rows_written = 0
 
@@ -273,6 +281,9 @@ def build_bronze_to_silver_features(
                 if role == "batter":
                     merge_defence_into_row(row, defence_by_year.get(y, {}))
                     merge_primary_position_into_row(row, positions_by_year.get(y, {}))
+
+                # Merge player bio (age, height, weight, birth info) into the row.
+                merge_bio_into_row(row, bios_by_year.get(y, {}))
 
                 # Validate the feature row.
                 _validate_feature_row(row, role=role)

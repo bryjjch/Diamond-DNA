@@ -274,6 +274,7 @@ resource "aws_lambda_function" "statcast_ingestion" {
       S3_PREFIX           = var.s3_prefix
       RAW_RUNNING_PREFIX  = var.raw_running_s3_prefix
       RAW_DEFENCE_PREFIX  = var.raw_defence_s3_prefix
+      RAW_BIO_PREFIX      = var.raw_bio_s3_prefix
       PYBASEBALL_NO_CACHE = "true"
       HOME                = "/tmp"
     }
@@ -301,6 +302,7 @@ resource "aws_lambda_function" "silver_feature_build" {
       RAW_PREFIX         = var.s3_prefix
       RAW_RUNNING_PREFIX = var.raw_running_s3_prefix
       RAW_DEFENCE_PREFIX = var.raw_defence_s3_prefix
+      RAW_BIO_PREFIX     = var.raw_bio_s3_prefix
       FEATURE_PREFIX     = var.silver_s3_prefix
       GOLD_PREFIX        = var.gold_s3_prefix
       YEAR_TO_DATE       = "true"
