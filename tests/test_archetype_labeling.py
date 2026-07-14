@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.ml.archetype_labeling import (
+from src.ml.archetypes.archetype_labeling import (
     DEFAULT_GEMINI_MODEL,
     _build_gemini_prompt,
     build_cluster_labels,
@@ -97,7 +97,7 @@ def test_build_cluster_labels_writes_sidecar(monkeypatch):
     json_writes: dict[str, dict] = {}
 
     monkeypatch.setattr(
-        "src.ml.archetype_labeling.generate_cluster_labels",
+        "src.ml.archetypes.archetype_labeling.generate_cluster_labels",
         lambda profiles, **kwargs: fake_labels,
     )
 
@@ -105,7 +105,7 @@ def test_build_cluster_labels_writes_sidecar(monkeypatch):
         json_writes[key] = payload
 
     monkeypatch.setattr(
-        "src.ml.archetype_labeling._write_json_to_s3",
+        "src.ml.archetypes.archetype_labeling._write_json_to_s3",
         fake_write,
     )
 

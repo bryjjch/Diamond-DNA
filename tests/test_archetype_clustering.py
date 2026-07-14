@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 from sklearn.datasets import make_blobs
 
-from src.ml.archetype_clustering import (
+from src.ml.archetypes.archetype_clustering import (
     ArchetypeClusteringConfig,
     ArchetypeClusteringConfigsByRole,
     build_gold_archetype_clustering,
@@ -305,23 +305,23 @@ def test_build_gold_archetype_clustering_writes_artifacts(monkeypatch):
         json_writes[key] = json.loads(json.dumps(payload, default=str))
 
     monkeypatch.setattr(
-        "src.ml.archetype_clustering.read_parquet_from_s3",
+        "src.ml.archetypes.archetype_clustering.read_parquet_from_s3",
         fake_read,
     )
     monkeypatch.setattr(
-        "src.ml.archetype_clustering.write_parquet_to_s3",
+        "src.ml.archetypes.archetype_clustering.write_parquet_to_s3",
         fake_write_parquet,
     )
     monkeypatch.setattr(
-        "src.ml.archetype_clustering._write_joblib_to_s3",
+        "src.ml.archetypes.archetype_clustering._write_joblib_to_s3",
         fake_write_joblib,
     )
     monkeypatch.setattr(
-        "src.ml.archetype_clustering._write_json_to_s3",
+        "src.ml.archetypes.archetype_clustering._write_json_to_s3",
         fake_write_json,
     )
     monkeypatch.setattr(
-        "src.ml.archetype_clustering._build_cluster_labels_for_role_year",
+        "src.ml.archetypes.archetype_clustering._build_cluster_labels_for_role_year",
         lambda **kwargs: None,
     )
 
@@ -388,23 +388,23 @@ def test_build_gold_archetype_clustering_configs_by_role_different_k(monkeypatch
         json_writes[key] = json.loads(json.dumps(payload, default=str))
 
     monkeypatch.setattr(
-        "src.ml.archetype_clustering.read_parquet_from_s3",
+        "src.ml.archetypes.archetype_clustering.read_parquet_from_s3",
         fake_read,
     )
     monkeypatch.setattr(
-        "src.ml.archetype_clustering.write_parquet_to_s3",
+        "src.ml.archetypes.archetype_clustering.write_parquet_to_s3",
         fake_write_parquet,
     )
     monkeypatch.setattr(
-        "src.ml.archetype_clustering._write_joblib_to_s3",
+        "src.ml.archetypes.archetype_clustering._write_joblib_to_s3",
         fake_write_joblib,
     )
     monkeypatch.setattr(
-        "src.ml.archetype_clustering._write_json_to_s3",
+        "src.ml.archetypes.archetype_clustering._write_json_to_s3",
         fake_write_json,
     )
     monkeypatch.setattr(
-        "src.ml.archetype_clustering._build_cluster_labels_for_role_year",
+        "src.ml.archetypes.archetype_clustering._build_cluster_labels_for_role_year",
         lambda **kwargs: None,
     )
 

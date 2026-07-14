@@ -8,7 +8,7 @@ most prone to subtle bugs.
 import numpy as np
 import pandas as pd
 
-from src.data_pipeline.silver import standard_stats_player_year as sss
+from src.data_pipeline.silver.standard_stats import silver_standard_player_year_stats as sss
 
 
 def test_outs_from_innings_pitched_thirds():

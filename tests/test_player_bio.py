@@ -5,7 +5,7 @@ import math
 import pandas as pd
 
 from src.data_pipeline.bronze.bio_ingestion import parse_height_inches, person_to_bio_row
-from src.data_pipeline.silver import bio_player_year
+from src.data_pipeline.silver.archetype_features import bio_player_year_helper as bio_player_year
 
 
 SAMPLE_PERSON = {

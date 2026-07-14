@@ -38,15 +38,15 @@ _SIMILARITY_EXPORTS = frozenset({"build_gold_player_similarity", "PlayerSimilari
 
 def __getattr__(name: str):
     if name in _ARCHETYPE_EXPORTS:
-        from . import archetype_clustering as _ac
+        from .archetypes import archetype_clustering as _ac
 
         return getattr(_ac, name)
     if name in _LABELING_EXPORTS:
-        from . import archetype_labeling as _al
+        from .archetypes import archetype_labeling as _al
 
         return getattr(_al, name)
     if name in _SIMILARITY_EXPORTS:
-        from . import player_similarity as _ps
+        from .knn_neighbours import player_similarity as _ps
 
         return getattr(_ps, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

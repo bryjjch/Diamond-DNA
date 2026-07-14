@@ -17,8 +17,12 @@ not abort the others, and the aggregated status reflects the worst outcome.
 
 from __future__ import annotations
 
+import argparse
 import logging
 from typing import Any, Dict, Optional, Sequence
+
+from ...common.runtime_helpers import event_or_env_int, event_or_env_str, yesterday_utc_date_str
+from ...common.settings import PipelineSettings
 
 logger = logging.getLogger(__name__)
 
@@ -134,15 +138,170 @@ def ingest_all_bronze(
 
 
 def main() -> None:
-    from ...common.cli import run_bronze_ingestion_main
+    cfg = PipelineSettings.from_environ()
+    yesterday = yesterday_utc_date_str()
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run all bronze ingestion sources (statcast pitches, sprint-speed running, "
+            "defence, player bios) in one call. Statcast uses the date range; the other "
+            "sources use the year range, which defaults to the years spanned by the date range."
+        )
+    )
+    parser.add_argument("--start-date", type=str, default=yesterday)
+    parser.add_argument("--end-date", type=str, default=yesterday)
+    parser.add_argument(
+        "--start-year",
+        type=int,
+        default=None,
+        help="Running/defence start year (default: year of --start-date).",
+    )
+    parser.add_argument(
+        "--end-year",
+        type=int,
+        default=None,
+        help="Running/defence end year (default: year of --end-date).",
+    )
+    parser.add_argument("--s3-bucket", type=str, default=cfg.s3_bucket)
+    parser.add_argument("--statcast-prefix", type=str, default=cfg.raw_statcast_prefix)
+    parser.add_argument("--running-prefix", type=str, default=cfg.raw_running_prefix)
+    parser.add_argument("--defence-prefix", type=str, default=cfg.raw_defence_prefix)
+    parser.add_argument("--bio-prefix", type=str, default=cfg.raw_bio_prefix)
+    parser.add_argument("--standard-prefix", type=str, default=cfg.raw_standard_stats_prefix)
+    parser.add_argument(
+        "--sources",
+        type=str,
+        default=",".join(ALL_SOURCES),
+        help="Comma-separated subset of sources to run (statcast,running,defence,bio,standard).",
+    )
+    # running tuning
+    parser.add_argument("--min-opp", type=int, default=10)
+    # defence tuning
+    parser.add_argument(
+        "--oaa-min-att",
+        type=str,
+        default="q",
+        help='Statcast OAA minimum attempts: "q" (qualified) or an integer.',
+    )
+    parser.add_argument("--arm-min-throws", type=int, default=50)
+    parser.add_argument("--framing-min-called", type=str, default="q")
+    parser.add_argument("--pop-min-2b", type=int, default=5)
+    parser.add_argument("--pop-min-3b", type=int, default=0)
+    args = parser.parse_args()
 
-    run_bronze_ingestion_main()
+    sources = [s.strip() for s in args.sources.split(",") if s.strip()]
+
+    oaa_min: str | int = args.oaa_min_att
+    if oaa_min != "q" and str(oaa_min).isdigit():
+        oaa_min = int(oaa_min)
+
+    framing_min: str | int = args.framing_min_called
+    if framing_min != "q" and str(framing_min).isdigit():
+        framing_min = int(framing_min)
+
+    result = ingest_all_bronze(
+        s3_bucket=args.s3_bucket,
+        statcast_prefix=args.statcast_prefix,
+        running_prefix=args.running_prefix,
+        defence_prefix=args.defence_prefix,
+        bio_prefix=args.bio_prefix,
+        standard_prefix=args.standard_prefix,
+        start_date_str=args.start_date,
+        end_date_str=args.end_date,
+        start_year=args.start_year,
+        end_year=args.end_year,
+        sources=sources,
+        min_opp=args.min_opp,
+        oaa_min_att=oaa_min,
+        arm_min_throws=args.arm_min_throws,
+        framing_min_called=framing_min,
+        pop_min_2b=args.pop_min_2b,
+        pop_min_3b=args.pop_min_3b,
+    )
+
+    if result["status"] == "error":
+        logger.error(result["message"])
+        for err in result.get("errors", []):
+            logger.error(err)
+        raise SystemExit(1)
+    if result["status"] == "partial":
+        logger.warning(result["message"])
+        for err in result.get("errors", []):
+            logger.warning(err)
+        raise SystemExit(1)
+    logger.info(result["message"])
 
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    from ...common.handlers import bronze_ingestion_handler
+    y = yesterday_utc_date_str()
+    cfg = PipelineSettings.from_environ()
+    start_date = event_or_env_str(event, "start_date", "START_DATE", y)
+    end_date = event_or_env_str(event, "end_date", "END_DATE", y)
+    s3_bucket = event_or_env_str(event, "s3_bucket", "S3_BUCKET", cfg.s3_bucket)
+    statcast_prefix = event_or_env_str(
+        event, "statcast_prefix", "S3_PREFIX", cfg.raw_statcast_prefix
+    )
+    running_prefix = event_or_env_str(
+        event, "running_prefix", "RAW_RUNNING_PREFIX", cfg.raw_running_prefix
+    )
+    defence_prefix = event_or_env_str(
+        event, "defence_prefix", "RAW_DEFENCE_PREFIX", cfg.raw_defence_prefix
+    )
+    bio_prefix = event_or_env_str(event, "bio_prefix", "RAW_BIO_PREFIX", cfg.raw_bio_prefix)
+    standard_prefix = event_or_env_str(
+        event, "standard_prefix", "RAW_STANDARD_STATS_PREFIX", cfg.raw_standard_stats_prefix
+    )
 
-    return bronze_ingestion_handler(event, context)
+    # Year range is optional; empty -> None so the orchestrator derives it from the dates.
+    sy_raw = event_or_env_str(event, "start_year", "START_YEAR", "")
+    ey_raw = event_or_env_str(event, "end_year", "END_YEAR", "")
+    try:
+        start_year = int(sy_raw) if str(sy_raw).strip() else None
+        end_year = int(ey_raw) if str(ey_raw).strip() else None
+    except ValueError:
+        return {
+            "statusCode": 400,
+            "status": "error",
+            "message": "START_YEAR and END_YEAR must be integers when set.",
+        }
+
+    # sources: accept a JSON list (event) or a comma-separated string (event/env).
+    ev = event if isinstance(event, dict) else {}
+    raw_sources = ev.get("sources")
+    if isinstance(raw_sources, (list, tuple)):
+        sources = [str(s).strip() for s in raw_sources if str(s).strip()]
+    else:
+        sources_str = event_or_env_str(event, "sources", "SOURCES", ",".join(ALL_SOURCES))
+        sources = [s.strip() for s in sources_str.split(",") if s.strip()]
+
+    # "q" (qualified) or an integer threshold; empty falls back to "q".
+    oaa_s = str(event_or_env_str(event, "oaa_min_att", "OAA_MIN_ATT", "q")).strip() or "q"
+    oaa_min: str | int = int(oaa_s) if oaa_s.isdigit() else oaa_s
+    framing_s = (
+        str(event_or_env_str(event, "framing_min_called", "FRAMING_MIN_CALLED", "q")).strip() or "q"
+    )
+    framing_min: str | int = int(framing_s) if framing_s.isdigit() else framing_s
+
+    result = ingest_all_bronze(
+        s3_bucket=s3_bucket,
+        statcast_prefix=statcast_prefix,
+        running_prefix=running_prefix,
+        defence_prefix=defence_prefix,
+        bio_prefix=bio_prefix,
+        standard_prefix=standard_prefix,
+        start_date_str=start_date,
+        end_date_str=end_date,
+        start_year=start_year,
+        end_year=end_year,
+        sources=sources,
+        min_opp=event_or_env_int(event, "min_opp", "MIN_OPP", 10),
+        oaa_min_att=oaa_min,
+        arm_min_throws=event_or_env_int(event, "arm_min_throws", "ARM_MIN_THROWS", 50),
+        framing_min_called=framing_min,
+        pop_min_2b=event_or_env_int(event, "pop_min_2b", "POP_MIN_2B", 5),
+        pop_min_3b=event_or_env_int(event, "pop_min_3b", "POP_MIN_3B", 0),
+    )
+    status_code = 200 if result["status"] == "ok" else (207 if result["status"] == "partial" else 400)
+    return {"statusCode": status_code, **result}
 
 
 if __name__ == "__main__":

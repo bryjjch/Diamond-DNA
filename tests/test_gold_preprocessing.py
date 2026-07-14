@@ -3,7 +3,7 @@ import json
 import numpy as np
 import pandas as pd
 
-from src.data_pipeline.gold.preprocessing import (
+from src.data_pipeline.gold.gold_preprocessing import (
     GoldPreprocessingConfig,
     build_silver_to_gold_preprocessing,
     is_column_excluded_from_archetype_training_features,
@@ -157,9 +157,9 @@ def test_build_silver_to_gold_preprocessing_writes_gold_and_metadata(monkeypatch
         def put_object(self, **kwargs):
             metadata_writes[kwargs["Key"]] = json.loads(kwargs["Body"].decode("utf-8"))
 
-    monkeypatch.setattr("src.data_pipeline.gold.preprocessing.read_parquet_from_s3", fake_read)
-    monkeypatch.setattr("src.data_pipeline.gold.preprocessing.write_parquet_to_s3", fake_write)
-    monkeypatch.setattr("src.data_pipeline.gold.preprocessing.get_s3_client", lambda: _DummyS3())
+    monkeypatch.setattr("src.data_pipeline.gold.gold_preprocessing.read_parquet_from_s3", fake_read)
+    monkeypatch.setattr("src.data_pipeline.gold.gold_preprocessing.write_parquet_to_s3", fake_write)
+    monkeypatch.setattr("src.data_pipeline.gold.gold_preprocessing.get_s3_client", lambda: _DummyS3())
 
     result = build_silver_to_gold_preprocessing(
         bucket="bucket",

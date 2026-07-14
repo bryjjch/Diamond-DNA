@@ -8,6 +8,7 @@ Fetches Statcast running leaderboard data from pybaseball and uploads to S3 as P
 
 from __future__ import annotations
 
+import argparse
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict
@@ -19,8 +20,10 @@ try:
 except Exception:
     statcast_sprint_speed = None
 
-from .ingest_common import retry_with_backoff
-from ...common.s3_interaction import raw_sprint_speed_key, write_parquet_to_s3
+from .ingest_helpers import retry_with_backoff
+from ...common.runtime_helpers import current_utc_year, event_or_env_int, event_or_env_str
+from ...common.s3_helpers import write_parquet_to_s3
+from ...common.settings import PipelineSettings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -60,7 +63,7 @@ def fetch_sprint_speed_for_year(
     if df is None:
         return {"status": "error", "message": f"Fetch failed for year {year}"}
 
-    out_key = raw_sprint_speed_key(s3_prefix, year)
+    out_key = f"{s3_prefix.strip('/')}/year={year}/statcast_sprint_speed.parquet"
     logger.info("Uploading %d sprint speed rows to s3://%s/%s", len(df), s3_bucket, out_key)
     write_parquet_to_s3(df, s3_bucket, out_key, log_write=False)
     return {"status": "ok", "message": "OK", "records": int(len(df))}
@@ -99,15 +102,47 @@ def ingest_year_range(start_year: int, end_year: int, s3_bucket: str, s3_prefix:
 
 
 def main() -> None:
-    from ...common.cli import run_statcast_running_ingestion_main
+    cfg = PipelineSettings.from_environ()
+    cy = current_utc_year()
+    parser = argparse.ArgumentParser(
+        description="Ingest Statcast sprint speed leaderboard to S3 (year range)."
+    )
+    parser.add_argument("--start-year", type=int, default=cy - 3)
+    parser.add_argument("--end-year", type=int, default=cy)
+    parser.add_argument("--min-opp", type=int, default=10)
+    parser.add_argument("--s3-bucket", type=str, default=cfg.s3_bucket)
+    parser.add_argument("--s3-prefix", type=str, default=cfg.raw_running_prefix)
+    args = parser.parse_args()
 
-    run_statcast_running_ingestion_main()
+    result = ingest_year_range(
+        args.start_year, args.end_year, args.s3_bucket, args.s3_prefix, min_opp=args.min_opp
+    )
+
+    if result["status"] == "error":
+        logger.error(result["message"])
+        for err in result.get("errors", []):
+            logger.error(err)
+        raise SystemExit(1)
+    if result["status"] == "partial":
+        logger.warning(result["message"])
+        for err in result.get("errors", []):
+            logger.warning(err)
+        raise SystemExit(1)
+    logger.info(result["message"])
 
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    from ...common.handlers import statcast_running_ingestion_handler
+    cy = current_utc_year()
+    cfg = PipelineSettings.from_environ()
+    start_year = event_or_env_int(event, "start_year", "START_YEAR", cy - 3)
+    end_year = event_or_env_int(event, "end_year", "END_YEAR", cy)
+    min_opp = event_or_env_int(event, "min_opp", "MIN_OPP", 10)
+    s3_bucket = event_or_env_str(event, "s3_bucket", "S3_BUCKET", cfg.s3_bucket)
+    s3_prefix = event_or_env_str(event, "s3_prefix", "S3_PREFIX", cfg.raw_running_prefix)
 
-    return statcast_running_ingestion_handler(event, context)
+    result = ingest_year_range(start_year, end_year, s3_bucket, s3_prefix, min_opp=min_opp)
+    status_code = 200 if result["status"] == "ok" else (207 if result["status"] == "partial" else 400)
+    return {"statusCode": status_code, **result}
 
 
 if __name__ == "__main__":

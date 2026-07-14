@@ -11,15 +11,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
-from ..common.runtime import current_utc_year
-from ..common.s3_interaction import (
-    ARCHETYPE_CLUSTER_LABELS_FILENAME,
-    get_s3_client,
-    gold_archetype_assignments_key,
-    gold_archetype_cluster_labels_key,
-    gold_player_similar_neighbors_key,
-    read_parquet_from_s3,
-)
+from ..common.runtime_helpers import current_utc_year
+from ..common.s3_helpers import get_s3_client, read_parquet_from_s3
 from ..common.settings import PipelineSettings
 
 logger = logging.getLogger(__name__)
@@ -130,12 +123,12 @@ def _load_labels_from_s3(bucket: str, gold_prefix: str, year: int) -> ClusterLab
     client = get_s3_client()
     labels: ClusterLabelLookup = {}
     for role in _ROLES:
-        key = gold_archetype_cluster_labels_key(gold_prefix, role, year)
+        key = f"{gold_prefix.strip('/')}/{role}/year={year}/cluster_labels.json"
         try:
             obj = client.get_object(Bucket=bucket, Key=key)
             raw = obj["Body"].read()
         except client.exceptions.NoSuchKey:
-            logger.info("No %s for role=%s year=%d at s3://%s/%s", ARCHETYPE_CLUSTER_LABELS_FILENAME, role, year, bucket, key)
+            logger.info("No cluster_labels.json for role=%s year=%d at s3://%s/%s", role, year, bucket, key)
             continue
         except Exception as exc:
             logger.warning("Failed reading s3://%s/%s: %s", bucket, key, exc)
@@ -214,8 +207,8 @@ def _load_from_s3(
     errors: List[str] = []
 
     for role in _ROLES:
-        ak = gold_archetype_assignments_key(gold_prefix, role, year)
-        nk = gold_player_similar_neighbors_key(gold_prefix, role, year)
+        ak = f"{gold_prefix.strip('/')}/{role}/year={year}/player_year_archetypes.parquet"
+        nk = f"{gold_prefix.strip('/')}/{role}/year={year}/player_year_similar_neighbors.parquet"
         adf = read_parquet_from_s3(bucket, ak, missing_key_log="none")
         ndf = read_parquet_from_s3(bucket, nk, missing_key_log="none")
         if adf is None or adf.empty:
