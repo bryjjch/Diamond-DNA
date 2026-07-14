@@ -27,6 +27,12 @@ ARCHETYPE_CLUSTER_LABELS_FILENAME = "cluster_labels.json"
 PLAYER_YEAR_SIMILAR_NEIGHBORS_FILENAME = "player_year_similar_neighbors.parquet"
 PLAYER_SIMILARITY_METADATA_FILENAME = "player_similarity_metadata.json"
 
+# Bronze standard stat-line layer filenames (must match uploads in bronze.standard_stats_ingestion).
+STANDARD_BATTING_FILENAME = "mlb_standard_batting.parquet"
+STANDARD_PITCHING_FILENAME = "mlb_standard_pitching.parquet"
+# Silver standard stat-line table filename (own player-year table per role).
+STANDARD_STATS_PLAYER_YEAR_FILENAME = "standard_stats_player_year.parquet"
+
 # Bronze defence layer filenames (must match uploads in bronze.defence_ingestion).
 DEFENCE_OAA_PARQUET = "statcast_oaa.parquet"
 DEFENCE_OUTFIELD_CATCH_PARQUET = "statcast_outfield_catch_probability.parquet"
@@ -64,6 +70,26 @@ def raw_defence_dataset_key(prefix: str, year: int, dataset_filename: str) -> st
     """Single bronze defence dataset object under a year partition."""
     p = prefix.strip("/")
     return f"{p}/year={year}/{dataset_filename}"
+
+
+# Bronze standard stat-line group -> filename. "batting"/"pitching" map to the
+# statsapi hitting/pitching groups landed by bronze.standard_stats_ingestion.
+_STANDARD_STATS_FILENAMES = {
+    "batting": STANDARD_BATTING_FILENAME,
+    "pitching": STANDARD_PITCHING_FILENAME,
+}
+
+
+def raw_standard_stats_key(prefix: str, year: int, group: str) -> str:
+    """Bronze standard stat lines: {prefix}/year=Y/mlb_standard_{group}.parquet."""
+    p = prefix.strip("/")
+    return f"{p}/year={year}/{_STANDARD_STATS_FILENAMES[group]}"
+
+
+def standard_stats_player_year_key(prefix: str, role: str, year: int) -> str:
+    """Silver standard stat-line table: {prefix}/{role}/year=Y/standard_stats_player_year.parquet."""
+    p = prefix.strip("/")
+    return f"{p}/{role}/year={year}/{STANDARD_STATS_PLAYER_YEAR_FILENAME}"
 
 
 def gold_player_year_output_key(prefix: str, role: str, year: int) -> str:

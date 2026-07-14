@@ -22,6 +22,7 @@ class PipelineSettings:
     raw_running_prefix: str
     raw_defence_prefix: str
     raw_bio_prefix: str
+    raw_standard_stats_prefix: str
 
     @classmethod
     def from_environ(cls, environ: Optional[Mapping[str, str]] = None) -> PipelineSettings:
@@ -40,4 +41,7 @@ class PipelineSettings:
             ),
             raw_defence_prefix=_strip_prefix(e.get("RAW_DEFENCE_PREFIX", "bronze/defence")),
             raw_bio_prefix=_strip_prefix(e.get("RAW_BIO_PREFIX", "bronze/bio")),
+            raw_standard_stats_prefix=_strip_prefix(
+                e.get("RAW_STANDARD_STATS_PREFIX", "bronze/standard_stats")
+            ),
         )

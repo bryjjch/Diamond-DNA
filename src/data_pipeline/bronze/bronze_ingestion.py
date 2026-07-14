@@ -7,6 +7,7 @@ Runs every bronze-layer ingestion source in a single call:
   - running:  Statcast sprint-speed leaderboard (year range)
   - defence:  defensive metrics leaderboards (year range)
   - bio:      MLB Stats API player bios (year range)
+  - standard: MLB Stats API standard season stat lines (year range)
 
 Statcast is date-scoped; the other sources are season (year) scoped. When the
 year range is not supplied explicitly, it is derived from the date range so a single
@@ -21,7 +22,7 @@ from typing import Any, Dict, Optional, Sequence
 
 logger = logging.getLogger(__name__)
 
-ALL_SOURCES = ("statcast", "running", "defence", "bio")
+ALL_SOURCES = ("statcast", "running", "defence", "bio", "standard")
 
 
 def _year_from_date_str(date_str: str) -> int:
@@ -39,6 +40,7 @@ def ingest_all_bronze(
     running_prefix: str,
     defence_prefix: str,
     bio_prefix: str,
+    standard_prefix: str,
     start_date_str: str,
     end_date_str: str,
     start_year: Optional[int] = None,
@@ -64,6 +66,7 @@ def ingest_all_bronze(
     from .statcast_ingestion import ingest_date_range
     from .statcast_running_ingestion import ingest_year_range as ingest_running_year_range
     from .defence_ingestion import ingest_year_range as ingest_defence_year_range
+    from .standard_stats_ingestion import ingest_year_range as ingest_standard_year_range
 
     unknown = [s for s in sources if s not in ALL_SOURCES]
     if unknown:
@@ -98,6 +101,7 @@ def ingest_all_bronze(
             pop_min_3b=pop_min_3b,
         ),
         "bio": lambda: ingest_bio_year_range(sy, ey, s3_bucket, bio_prefix),
+        "standard": lambda: ingest_standard_year_range(sy, ey, s3_bucket, standard_prefix),
     }
 
     results: Dict[str, Any] = {}

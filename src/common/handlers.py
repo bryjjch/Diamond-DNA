@@ -364,6 +364,45 @@ def bio_ingestion_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]
     return {"statusCode": status_code, **result}
 
 
+def standard_stats_ingestion_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    from ..data_pipeline.bronze.standard_stats_ingestion import ingest_year_range
+
+    cy = current_utc_year()
+    cfg = PipelineSettings.from_environ()
+    start_year = event_or_env_int(event, "start_year", "START_YEAR", cy - 3)
+    end_year = event_or_env_int(event, "end_year", "END_YEAR", cy)
+    s3_bucket = event_or_env_str(event, "s3_bucket", "S3_BUCKET", cfg.s3_bucket)
+    s3_prefix = event_or_env_str(event, "s3_prefix", "S3_PREFIX", cfg.raw_standard_stats_prefix)
+
+    result = ingest_year_range(start_year, end_year, s3_bucket, s3_prefix)
+    status_code = 200 if result["status"] == "ok" else (207 if result["status"] == "partial" else 400)
+    return {"statusCode": status_code, **result}
+
+
+def standard_stats_silver_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    from ..data_pipeline.silver.standard_stats_player_year import build_standard_stats_range
+
+    cy = current_utc_year()
+    cfg = PipelineSettings.from_environ()
+    start_year = event_or_env_int(event, "start_year", "START_YEAR", cy - 1)
+    end_year = event_or_env_int(event, "end_year", "END_YEAR", cy)
+    bucket = event_or_env_str(event, "s3_bucket", "S3_BUCKET", cfg.s3_bucket)
+    raw_standard_stats_prefix = event_or_env_str(
+        event, "raw_standard_stats_prefix", "RAW_STANDARD_STATS_PREFIX", cfg.raw_standard_stats_prefix
+    )
+    silver_prefix = event_or_env_str(event, "silver_prefix", "FEATURE_PREFIX", cfg.feature_prefix)
+
+    result = build_standard_stats_range(
+        bucket=bucket,
+        raw_standard_stats_prefix=raw_standard_stats_prefix,
+        silver_prefix=silver_prefix,
+        start_year=start_year,
+        end_year=end_year,
+    )
+    status_code = 200 if result.get("status") in ("ok", "no_data") else 400
+    return {"statusCode": status_code, **result}
+
+
 def bronze_ingestion_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     from ..data_pipeline.bronze.bronze_ingestion import ALL_SOURCES, ingest_all_bronze
 
@@ -382,6 +421,9 @@ def bronze_ingestion_handler(event: Dict[str, Any], context: Any) -> Dict[str, A
         event, "defence_prefix", "RAW_DEFENCE_PREFIX", cfg.raw_defence_prefix
     )
     bio_prefix = event_or_env_str(event, "bio_prefix", "RAW_BIO_PREFIX", cfg.raw_bio_prefix)
+    standard_prefix = event_or_env_str(
+        event, "standard_prefix", "RAW_STANDARD_STATS_PREFIX", cfg.raw_standard_stats_prefix
+    )
 
     # Year range is optional; empty -> None so the orchestrator derives it from the dates.
     sy_raw = event_or_env_str(event, "start_year", "START_YEAR", "")
@@ -414,6 +456,7 @@ def bronze_ingestion_handler(event: Dict[str, Any], context: Any) -> Dict[str, A
         running_prefix=running_prefix,
         defence_prefix=defence_prefix,
         bio_prefix=bio_prefix,
+        standard_prefix=standard_prefix,
         start_date_str=start_date,
         end_date_str=end_date,
         start_year=start_year,
