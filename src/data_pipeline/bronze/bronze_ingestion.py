@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import time
 from typing import Any, Dict, Optional, Sequence
 
 from ...common.runtime_helpers import event_or_env_int, event_or_env_str, yesterday_utc_date_str
@@ -112,11 +113,18 @@ def ingest_all_bronze(
     errors: list[str] = []
     for src in enabled:
         logger.info("Bronze ingestion: running source %r", src)
+        source_started = time.monotonic()
         try:
             res = runners[src]()
         except Exception as exc:  # noqa: BLE001 - one source must not abort the others
             logger.exception("Bronze source %r raised", src)
             res = {"status": "error", "message": f"{src} raised: {exc}", "errors": [str(exc)]}
+        logger.info(
+            "[timing] bronze source %r: %.1fs (status=%s)",
+            src,
+            time.monotonic() - source_started,
+            res.get("status"),
+        )
         results[src] = res
         sub_errors = res.get("errors") or []
         for err in sub_errors:
