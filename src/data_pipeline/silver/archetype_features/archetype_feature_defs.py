@@ -1,11 +1,14 @@
 """
 Shared definitions for pitch-derived archetype-friendly features.
+
+Per-pitch flag/value functions used by ``player_year_feature_table``; each operates on
+the whole pitch frame and returns a row-aligned Series.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Set, Tuple
+from typing import Set, Tuple
 
 import numpy as np
 import pandas as pd
@@ -15,22 +18,12 @@ _HC_HOME_X = 125.42
 _HC_HOME_Y = 198.27
 
 # Fastball pitch types.
-_FASTBALL_PITCH_TYPES: Set[str] = {"FF", "FA", "FT", "SI", "FC"}
+FASTBALL_PITCH_TYPES: Set[str] = {"FF", "FA", "FT", "SI", "FC"}
 # Junk / non-pitch rows to drop from velocity summaries.
-_EXCLUDED_PITCH_TYPES_MINIMAL: Set[str] = {"UN", "PO", "XX", "IN"}
+EXCLUDED_PITCH_TYPES: Set[str] = {"UN", "PO", "XX", "IN"}
 
-# Public aliases (the underscore names predate use outside this module).
-FASTBALL_PITCH_TYPES: Set[str] = _FASTBALL_PITCH_TYPES
-EXCLUDED_PITCH_TYPES: Set[str] = _EXCLUDED_PITCH_TYPES_MINIMAL
-
-
-def _mean_numeric_to_float(values: pd.Series) -> float:
-    """Mean of coerced numeric series as a Python float; handles all-NA and pd.NA from pandas."""
-    x = pd.to_numeric(values, errors="coerce")
-    m = x.mean(skipna=True)
-    if m is None or pd.isna(m):
-        return float("nan")
-    return float(m)
+# Spray angle beyond which a batted ball counts as pulled (or opposite-field).
+ANGLE_PULL_THRESHOLD_DEG = 20.0
 
 
 @dataclass(frozen=True)
@@ -41,27 +34,6 @@ class BarrelDef:
 
 
 DEFAULT_BARREL_DEF = BarrelDef()
-
-
-def nan_iqr(values: pd.Series) -> float:
-    """Interquartile range (75th - 25th) with NA-safe handling."""
-    x = pd.to_numeric(values, errors="coerce").dropna().to_numpy()
-    if x.size < 2:
-        return float("nan")
-    q25 = np.nanpercentile(x, 25)
-    q75 = np.nanpercentile(x, 75)
-    return float(q75 - q25)
-
-
-def nan_entropy_from_counts(counts: Dict[str, int]) -> float:
-    """Shannon entropy computed from discrete counts. Calculated by the formula: -sum(p_i * log(p_i))"""
-    total = sum(counts.values())
-    if total <= 0:
-        return float("nan")
-    probs = np.array([c / total for c in counts.values() if c > 0], dtype=float)
-    if probs.size <= 1:
-        return 0.0
-    return float(-(probs * np.log(probs)).sum())
 
 
 def _safe_lower_series(values: pd.Series) -> pd.Series:
@@ -154,15 +126,6 @@ def compute_barrel_flag(
     return barrel.fillna(False).astype(bool)
 
 
-def iqr_mean_summary(values: pd.Series) -> Tuple[float, float]:
-    """Return (mean, iqr) with NA-safe handling."""
-    x = pd.to_numeric(values, errors="coerce").to_numpy(dtype=float)
-    x = x[~np.isnan(x)]
-    if x.size == 0:
-        return (float("nan"), float("nan"))
-    return (float(np.nanmean(x)), nan_iqr(pd.Series(x)))
-
-
 def spray_angle_degrees(hc_x: pd.Series, hc_y: pd.Series) -> pd.Series:
     """Horizontal spray angle in degrees (Statcast hc_x / hc_y convention)."""
     x = pd.to_numeric(hc_x, errors="coerce")
@@ -171,227 +134,76 @@ def spray_angle_degrees(hc_x: pd.Series, hc_y: pd.Series) -> pd.Series:
     return pd.Series(np.degrees(rad), index=hc_x.index)
 
 
-def pull_oppo_center_rates(
-    df: pd.DataFrame,
-    *,
-    stand_col: str = "stand",
-    hc_x_col: str = "hc_x",
-    hc_y_col: str = "hc_y",
-    angle_pull_threshold_deg: float = 20.0,
-) -> Tuple[float, float, float]:
+def _nan_series(index: pd.Index) -> pd.Series:
+    return pd.Series(np.nan, index=index)
+
+
+def first_pitch_strike_flag(raw: pd.DataFrame, desc: pd.Series) -> pd.Series:
     """
-    Pull / opposite-field / center rates for rows with valid stand, hc_x, hc_y.
+    0/1 on first pitches of a PA (strike or in play), NaN elsewhere.
 
-    Uses handedness-specific pull sides.
+    ``desc`` is the pre-lowercased ``description`` column, shared across feature helpers.
     """
-    if stand_col not in df.columns or hc_x_col not in df.columns or hc_y_col not in df.columns:
-        return (float("nan"), float("nan"), float("nan"))
-
-    stand = _safe_lower_series(df[stand_col]).str.strip().str.upper()
-    ang = spray_angle_degrees(df[hc_x_col], df[hc_y_col])
-    valid = stand.isin(["R", "L"]) & ang.notna()
-    if not valid.any():
-        return (float("nan"), float("nan"), float("nan"))
-
-    s = stand[valid]
-    a = ang[valid]
-    # RHB pulls toward 3B (lower hc_x) -> negative spray angle; LHB pulls toward 1B -> positive.
-    pull_side = np.where(s == "R", a < -angle_pull_threshold_deg, a > angle_pull_threshold_deg)
-    oppo_side = np.where(s == "R", a > angle_pull_threshold_deg, a < -angle_pull_threshold_deg)
-    center = ~(pull_side | oppo_side)
-
-    n = int(valid.sum())
-    return (float(pull_side.mean()), float(oppo_side.mean()), float(center.mean()))
-
-
-def batted_ball_type_rates(
-    df: pd.DataFrame,
-    *,
-    bb_type_col: str = "bb_type",
-) -> Dict[str, float]:
-    """Ground / line drive / fly ball / popup rates among pitches with non-null bb_type."""
-    if bb_type_col not in df.columns:
-        return {
-            "gb_percent": float("nan"),
-            "ld_percent": float("nan"),
-            "fb_percent": float("nan"),
-            "iffb_percent": float("nan"),
-        }
-
-    bt = _safe_lower_series(df[bb_type_col]).str.strip()
-    mask = bt.ne("") & df[bb_type_col].notna()
-    if not mask.any():
-        return {
-            "gb_percent": float("nan"),
-            "ld_percent": float("nan"),
-            "fb_percent": float("nan"),
-            "iffb_percent": float("nan"),
-        }
-
-    bt = bt[mask]
-    n = len(bt)
-    return {
-        "gb_percent": float(bt.eq("ground_ball").mean()),
-        "ld_percent": float(bt.eq("line_drive").mean()),
-        "fb_percent": float(bt.eq("fly_ball").mean()),
-        "iffb_percent": float(bt.eq("popup").mean()),
-    }
-
-
-def sweet_spot_rate(launch_angle: pd.Series) -> float:
-    """Share of batted balls with launch angle in [8, 32] degrees (MLB sweet-spot band)."""
-    la = pd.to_numeric(launch_angle, errors="coerce")
-    mask = la.notna()
-    if not mask.any():
-        return float("nan")
-    la = la[mask]
-    return float(la.between(8.0, 32.0, inclusive="both").mean())
-
-
-def zone_edge_and_meatball_rates(df: pd.DataFrame) -> Tuple[float, float]:
-    """
-    Among pitches mapped to the 3x3 strike-zone grid (zone 1..9), share on the rim (edge)
-    vs center (zone 5).
-    """
-    if "zone" not in df.columns:
-        return (float("nan"), float("nan"))
-    z = pd.to_numeric(df["zone"], errors="coerce")
-    mask = z.between(1, 9, inclusive="both")
-    if not mask.any():
-        return (float("nan"), float("nan"))
-    z9 = z[mask].astype(int)
-    meatball = float((z9 == 5).mean())
-    edge = float((z9 != 5).mean())
-    return (edge, meatball)
-
-
-def first_pitch_strike_rate(df: pd.DataFrame) -> float:
-    """Share of plate appearances where the first pitch is not a ball (uses `pitch_number` and `type`)."""
-    need = ("pitch_number", "game_pk", "at_bat_number")
-    if not all(c in df.columns for c in need):
-        return float("nan")
-
-    pn = pd.to_numeric(df["pitch_number"], errors="coerce")
-    sub = df.loc[pn == 1].copy()
-    if sub.empty:
-        return float("nan")
-
-    if "type" in sub.columns:
-        t = _safe_lower_series(sub["type"]).str.strip().str.upper()
+    if not all(c in raw.columns for c in ("pitch_number", "game_pk", "at_bat_number")):
+        return _nan_series(raw.index)
+    is_first = pd.to_numeric(raw["pitch_number"], errors="coerce") == 1
+    if "type" in raw.columns:
         # B = ball; S = strike; X = in play (counts toward FPS).
-        known = t.notna()
-        if known.any():
-            fps = t.loc[known].isin(["S", "X"])
-            return float(fps.mean())
+        t = raw["type"].fillna("").astype(str).str.strip().str.upper()
+        flag = t.isin(["S", "X"])
+    else:
+        flag = desc.str.contains(
+            "called_strike|swinging_strike|foul|hit_into_play|missed_bunt|bunt_foul",
+            na=False,
+            regex=True,
+        )
+    return flag.astype(float).where(is_first)
 
-    desc = _safe_lower_series(sub["description"]) if "description" in sub.columns else pd.Series("", index=sub.index)
-    strike_like = desc.str.contains(
-        "called_strike|swinging_strike|foul|hit_into_play|missed_bunt|bunt_foul",
-        na=False,
-        regex=True,
+
+def platoon_xwoba_columns(raw: pd.DataFrame, desc: pd.Series) -> Tuple[pd.Series, pd.Series]:
+    """
+    Estimated xwOBA on balls in play, split into vs-LHB / vs-RHB columns (NaN elsewhere).
+
+    ``desc`` is the pre-lowercased ``description`` column, shared across feature helpers.
+    """
+    if "stand" not in raw.columns or "estimated_woba_using_speedangle" not in raw.columns:
+        return _nan_series(raw.index), _nan_series(raw.index)
+    stand = raw["stand"].fillna("").astype(str).str.strip().str.upper()
+    w = pd.to_numeric(raw["estimated_woba_using_speedangle"], errors="coerce")
+    bip = desc.str.contains("hit_into_play", na=False)
+    if "launch_speed" in raw.columns:
+        bip = bip | pd.to_numeric(raw["launch_speed"], errors="coerce").notna()
+    return w.where(bip & stand.eq("L")), w.where(bip & stand.eq("R"))
+
+
+def batted_ball_flag_columns(
+    raw: pd.DataFrame,
+) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
+    """(ground_ball, line_drive, fly_ball, popup) 0/1 flags among rows with a bb_type."""
+    if "bb_type" not in raw.columns:
+        nan = _nan_series(raw.index)
+        return nan, nan, nan, nan
+    bt = raw["bb_type"].fillna("").astype(str).str.lower().str.strip()
+    mask = bt.ne("") & raw["bb_type"].notna()
+
+    def flag(name: str) -> pd.Series:
+        return bt.eq(name).astype(float).where(mask)
+
+    return flag("ground_ball"), flag("line_drive"), flag("fly_ball"), flag("popup")
+
+
+def pull_oppo_columns(raw: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
+    """Handedness-aware pull/oppo 0/1 flags among rows with valid stand and hit coordinates."""
+    if not all(c in raw.columns for c in ("stand", "hc_x", "hc_y")):
+        return _nan_series(raw.index), _nan_series(raw.index)
+    stand = raw["stand"].fillna("").astype(str).str.strip().str.upper()
+    ang = spray_angle_degrees(raw["hc_x"], raw["hc_y"])
+    valid = stand.isin(["R", "L"]) & ang.notna()
+    is_r = stand.eq("R")
+    # RHB pulls toward 3B (negative spray angle); LHB pulls toward 1B (positive).
+    pull = np.where(is_r, ang < -ANGLE_PULL_THRESHOLD_DEG, ang > ANGLE_PULL_THRESHOLD_DEG)
+    oppo = np.where(is_r, ang > ANGLE_PULL_THRESHOLD_DEG, ang < -ANGLE_PULL_THRESHOLD_DEG)
+    return (
+        pd.Series(pull, index=raw.index, dtype=float).where(valid),
+        pd.Series(oppo, index=raw.index, dtype=float).where(valid),
     )
-    return float(strike_like.mean())
-
-
-def platoon_estimated_woba_means(
-    df: pd.DataFrame,
-    *,
-    stand_col: str = "stand",
-    woba_col: str = "estimated_woba_using_speedangle",
-    bip_only: bool = True,
-) -> Tuple[float, float, float]:
-    """
-    Mean estimated xwOBA vs LHB and RHB, and (LHB - RHB) differential.
-
-    Rows with batter stand 'S' are excluded. If `bip_only`, restricts to balls in play.
-    """
-    if stand_col not in df.columns or woba_col not in df.columns:
-        return (float("nan"), float("nan"), float("nan"))
-
-    stand = _safe_lower_series(df[stand_col]).str.strip().str.upper()
-    w = pd.to_numeric(df[woba_col], errors="coerce")
-
-    if bip_only:
-        if "description" in df.columns:
-            desc = _safe_lower_series(df["description"])
-            bip = desc.str.contains("hit_into_play", na=False)
-        else:
-            bip = pd.Series(False, index=df.index)
-        if "launch_speed" in df.columns:
-            bip = bip | pd.to_numeric(df["launch_speed"], errors="coerce").notna()
-        stand = stand.loc[bip]
-        w = w.loc[bip]
-
-    out_l = _mean_numeric_to_float(w.loc[stand == "L"])
-    out_r = _mean_numeric_to_float(w.loc[stand == "R"])
-    diff = out_l - out_r if (not np.isnan(out_l) and not np.isnan(out_r)) else float("nan")
-    return (out_l, out_r, diff)
-
-
-def pitch_type_physical_means(
-    df: pd.DataFrame,
-    *,
-    min_pitches_per_type: int,
-    pitch_type_col: str = "pitch_type",
-) -> Dict[str, float]:
-    """
-    Per pitch-type means for release_speed, release_spin_rate, pfx_x (keys like pt_FF_release_speed_mean).
-    """
-    cols = ("release_speed", "release_spin_rate", "pfx_x")
-    if pitch_type_col not in df.columns or not all(c in df.columns for c in cols):
-        return {}
-
-    pt = df[pitch_type_col].astype(str).str.strip().str.upper()
-    out: Dict[str, float] = {}
-    for ptype in pt.dropna().unique():
-        if not ptype or ptype in _EXCLUDED_PITCH_TYPES_MINIMAL:
-            continue
-        m = pt == ptype
-        if int(m.sum()) < min_pitches_per_type:
-            continue
-        sub = df.loc[m]
-        out[f"pt_{ptype}_release_speed_mean"] = _mean_numeric_to_float(sub["release_speed"])
-        out[f"pt_{ptype}_release_spin_rate_mean"] = _mean_numeric_to_float(sub["release_spin_rate"])
-        out[f"pt_{ptype}_pfx_x_mean"] = _mean_numeric_to_float(sub["pfx_x"])
-    return out
-
-
-def fastball_offspeed_velo_means_and_diff(df: pd.DataFrame) -> Tuple[float, float, float]:
-    """Mean fastball-group velo, non-fastball velo, and FB minus offspeed (pitch-type level)."""
-    if "pitch_type" not in df.columns or "release_speed" not in df.columns:
-        return (float("nan"), float("nan"), float("nan"))
-
-    pt = df["pitch_type"].astype(str).str.strip().str.upper()
-    spd = pd.to_numeric(df["release_speed"], errors="coerce")
-    valid = spd.notna() & pt.notna() & ~pt.isin(_EXCLUDED_PITCH_TYPES_MINIMAL)
-
-    fb_mask = valid & pt.isin(_FASTBALL_PITCH_TYPES)
-    off_mask = valid & ~pt.isin(_FASTBALL_PITCH_TYPES)
-
-    if not fb_mask.any() or not off_mask.any():
-        return (float("nan"), float("nan"), float("nan"))
-
-    fb_m = _mean_numeric_to_float(spd[fb_mask])
-    off_m = _mean_numeric_to_float(spd[off_mask])
-    return (fb_m, off_m, float(fb_m - off_m))
-
-
-def pitch_type_shares_and_entropy(df: pd.DataFrame, *, pitch_type_col: str = "pitch_type") -> Dict[str, float]:
-    """Return per-pitch-type shares plus `pitch_type_entropy` for a player-year."""
-    if pitch_type_col not in df.columns:
-        return {}
-
-    pitch_types = df[pitch_type_col].dropna()
-    n = len(pitch_types)
-    if n <= 0:
-        return {"pitch_type_entropy": float("nan")}
-
-    counts = pitch_types.value_counts()
-    shares: Dict[str, float] = {}
-    for pt, c in counts.items():
-        shares[f"pitch_type_{pt}_share"] = float(c / n)
-
-    entropy = nan_entropy_from_counts(counts.to_dict())
-    shares["pitch_type_entropy"] = entropy
-    return shares
-

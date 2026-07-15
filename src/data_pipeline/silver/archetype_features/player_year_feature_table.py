@@ -1,9 +1,8 @@
 """
 Vectorized bronze→silver player-year feature computation.
 
-``compute_player_year_features`` produces the same rows as the loop-based reference
-``player_year_features_from_df`` (see ``silver_features_build``), but as a single
-SQL-style pipeline over the whole pitch frame:
+``compute_player_year_features`` aggregates pitch-level Statcast rows into player-year
+feature tables as a single SQL-style pipeline over the whole pitch frame:
 
 1. derive per-pitch flag/value columns once (the SELECT expressions),
 2. one ``groupby([player, year]).agg(...)`` per role (the GROUP BY),
@@ -12,9 +11,6 @@ SQL-style pipeline over the whole pitch frame:
 
 Conditional rates use the AVG(CASE WHEN ...) pattern: a float column holding the value
 where the condition holds and NaN elsewhere, so the group mean has the right denominator.
-
-Parity with the reference implementation is enforced in
-``tests/test_vectorized_features_parity.py``.
 """
 
 from __future__ import annotations
@@ -30,15 +26,16 @@ from .archetype_feature_defs import (
     EXCLUDED_PITCH_TYPES,
     FASTBALL_PITCH_TYPES,
     BarrelDef,
+    batted_ball_flag_columns,
     compute_barrel_flag,
     compute_in_zone,
     compute_swing_flag,
-    spray_angle_degrees,
+    first_pitch_strike_flag,
+    platoon_xwoba_columns,
+    pull_oppo_columns,
 )
 
 logger = logging.getLogger(__name__)
-
-_ANGLE_PULL_THRESHOLD_DEG = 20.0
 
 _REQUIRED_COLUMNS: Dict[str, Tuple[str, ...]] = {
     "pitcher": (
@@ -66,73 +63,6 @@ _REQUIRED_COLUMNS: Dict[str, Tuple[str, ...]] = {
 }
 
 
-def _nan_series(index: pd.Index) -> pd.Series:
-    return pd.Series(np.nan, index=index)
-
-
-def _first_pitch_strike_flag(raw: pd.DataFrame, desc: pd.Series) -> pd.Series:
-    """0/1 on first pitches of a PA (strike or in play), NaN elsewhere."""
-    if not all(c in raw.columns for c in ("pitch_number", "game_pk", "at_bat_number")):
-        return _nan_series(raw.index)
-    is_first = pd.to_numeric(raw["pitch_number"], errors="coerce") == 1
-    if "type" in raw.columns:
-        # B = ball; S = strike; X = in play (counts toward FPS).
-        t = raw["type"].fillna("").astype(str).str.strip().str.upper()
-        flag = t.isin(["S", "X"])
-    else:
-        flag = desc.str.contains(
-            "called_strike|swinging_strike|foul|hit_into_play|missed_bunt|bunt_foul",
-            na=False,
-            regex=True,
-        )
-    return flag.astype(float).where(is_first)
-
-
-def _platoon_xwoba_columns(raw: pd.DataFrame, desc: pd.Series) -> Tuple[pd.Series, pd.Series]:
-    """Estimated xwOBA on balls in play, split into vs-LHB / vs-RHB columns (NaN elsewhere)."""
-    if "stand" not in raw.columns or "estimated_woba_using_speedangle" not in raw.columns:
-        return _nan_series(raw.index), _nan_series(raw.index)
-    stand = raw["stand"].fillna("").astype(str).str.strip().str.upper()
-    w = pd.to_numeric(raw["estimated_woba_using_speedangle"], errors="coerce")
-    bip = desc.str.contains("hit_into_play", na=False)
-    if "launch_speed" in raw.columns:
-        bip = bip | pd.to_numeric(raw["launch_speed"], errors="coerce").notna()
-    return w.where(bip & stand.eq("L")), w.where(bip & stand.eq("R"))
-
-
-def _batted_ball_flag_columns(
-    raw: pd.DataFrame,
-) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
-    """(ground_ball, line_drive, fly_ball, popup) 0/1 flags among rows with a bb_type."""
-    if "bb_type" not in raw.columns:
-        nan = _nan_series(raw.index)
-        return nan, nan, nan, nan
-    bt = raw["bb_type"].fillna("").astype(str).str.lower().str.strip()
-    mask = bt.ne("") & raw["bb_type"].notna()
-
-    def flag(name: str) -> pd.Series:
-        return bt.eq(name).astype(float).where(mask)
-
-    return flag("ground_ball"), flag("line_drive"), flag("fly_ball"), flag("popup")
-
-
-def _pull_oppo_columns(raw: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
-    """Handedness-aware pull/oppo 0/1 flags among rows with valid stand and hit coordinates."""
-    if not all(c in raw.columns for c in ("stand", "hc_x", "hc_y")):
-        return _nan_series(raw.index), _nan_series(raw.index)
-    stand = raw["stand"].fillna("").astype(str).str.strip().str.upper()
-    ang = spray_angle_degrees(raw["hc_x"], raw["hc_y"])
-    valid = stand.isin(["R", "L"]) & ang.notna()
-    is_r = stand.eq("R")
-    # RHB pulls toward 3B (negative spray angle); LHB pulls toward 1B (positive).
-    pull = np.where(is_r, ang < -_ANGLE_PULL_THRESHOLD_DEG, ang > _ANGLE_PULL_THRESHOLD_DEG)
-    oppo = np.where(is_r, ang > _ANGLE_PULL_THRESHOLD_DEG, ang < -_ANGLE_PULL_THRESHOLD_DEG)
-    return (
-        pd.Series(pull, index=raw.index, dtype=float).where(valid),
-        pd.Series(oppo, index=raw.index, dtype=float).where(valid),
-    )
-
-
 def _group_iqr(
     g: "pd.core.groupby.DataFrameGroupBy",
     col_map: Dict[str, str],
@@ -141,7 +71,7 @@ def _group_iqr(
     cols = list(col_map)
     q = g[cols].quantile([0.25, 0.75]).unstack(level=-1)
     iqr = q.xs(0.75, axis=1, level=-1) - q.xs(0.25, axis=1, level=-1)
-    # nan_iqr returns NaN when a group has fewer than 2 observations.
+    # An IQR needs at least 2 observations; report NaN below that.
     iqr = iqr.where(g[cols].count() >= 2)
     return iqr.rename(columns=col_map)
 
@@ -226,7 +156,7 @@ def compute_player_year_features(
 
     ``raw`` must carry a ``year`` column and the ``role`` id column ("batter"/"pitcher").
     Returns a DataFrame with columns role, player_id, year, n_pitches_total, and the
-    role-specific feature set (identical to ``player_year_features_from_df`` rows).
+    role-specific feature set.
     """
     if role not in ("pitcher", "batter"):
         raise ValueError(f"Unknown role: {role}")
@@ -281,14 +211,14 @@ def compute_player_year_features(
         work["meatball_flag"] = (z == 5).astype(float).where(on_grid)
         work["edge_flag"] = (z != 5).astype(float).where(on_grid)
 
-        work["fps"] = _first_pitch_strike_flag(raw, desc)
-        work["xwoba_vs_lhb"], work["xwoba_vs_rhb"] = _platoon_xwoba_columns(raw, desc)
+        work["fps"] = first_pitch_strike_flag(raw, desc)
+        work["xwoba_vs_lhb"], work["xwoba_vs_rhb"] = platoon_xwoba_columns(raw, desc)
         (
             work["gb_flag"],
             work["ld_flag"],
             work["fb_flag"],
             work["iffb_flag"],
-        ) = _batted_ball_flag_columns(raw)
+        ) = batted_ball_flag_columns(raw)
 
         # Fastball vs offspeed velocity, excluding junk and missing pitch types.
         pt_u = raw["pitch_type"].astype(str).str.strip().str.upper()
@@ -367,13 +297,13 @@ def compute_player_year_features(
             .astype(float)
             .where(work["launch_angle"].notna())
         )
-        work["pull_flag"], work["oppo_flag"] = _pull_oppo_columns(raw)
+        work["pull_flag"], work["oppo_flag"] = pull_oppo_columns(raw)
         (
             work["gb_flag"],
             work["ld_flag"],
             work["fb_flag"],
             work["iffb_flag"],
-        ) = _batted_ball_flag_columns(raw)
+        ) = batted_ball_flag_columns(raw)
 
         # Walk rate (BB%) = walks / plate appearances. `events` is only populated on
         # the final pitch of each PA, so non-null events count PAs.
