@@ -19,6 +19,10 @@ _FASTBALL_PITCH_TYPES: Set[str] = {"FF", "FA", "FT", "SI", "FC"}
 # Junk / non-pitch rows to drop from velocity summaries.
 _EXCLUDED_PITCH_TYPES_MINIMAL: Set[str] = {"UN", "PO", "XX", "IN"}
 
+# Public aliases (the underscore names predate use outside this module).
+FASTBALL_PITCH_TYPES: Set[str] = _FASTBALL_PITCH_TYPES
+EXCLUDED_PITCH_TYPES: Set[str] = _EXCLUDED_PITCH_TYPES_MINIMAL
+
 
 def _mean_numeric_to_float(values: pd.Series) -> float:
     """Mean of coerced numeric series as a Python float; handles all-NA and pd.NA from pandas."""

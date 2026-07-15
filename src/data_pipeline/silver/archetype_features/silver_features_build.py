@@ -3,7 +3,9 @@
 Bronze → silver: build player-year archetype feature tables from bronze data.
 
 Reads bronze data from the S3 bucket and writes silver data to the S3 bucket.
-Core row logic lives in ``player_year_features_from_df``.
+Feature aggregation lives in ``player_year_feature_table.compute_player_year_features``
+(vectorized groupby); ``player_year_features_from_df`` here is the loop-based reference
+implementation kept for tests and parity checks.
 
 For scheduled runs that only pass ``end_date`` (e.g. yesterday), use ``year_to_date=True`` so
 bronze is loaded from Jan 1 through ``end_date`` for each affected calendar year—matching
@@ -18,7 +20,6 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-import numpy as np
 import pandas as pd
 
 from ....common.runtime_helpers import event_or_env_str, yesterday_utc_date_str
@@ -41,18 +42,16 @@ from .archetype_feature_defs import (
     sweet_spot_rate,
     zone_edge_and_meatball_rates,
 )
-from .bio_player_year_helper import load_player_bios_by_year, merge_bio_into_row
+from .bio_player_year_helper import load_player_bios_by_year, merge_bio_features
 from .defence_player_year_helper import (
     load_defence_metrics_by_player_year,
     load_primary_positions_by_player_year,
-    merge_defence_into_row,
-    merge_primary_position_into_row,
+    merge_defence_features,
+    merge_primary_position_features,
 )
-from .player_names_helper import (
-    build_mlbam_statcast_style_name_map,
-    resolve_mlbam_display_name,
-)
-from .sprint_helper import build_sprint_speed_lookups_by_year
+from .player_names_helper import build_mlbam_statcast_style_name_map
+from .player_year_feature_table import compute_player_year_features
+from .sprint_helper import apply_sprint_speed_lookup, build_sprint_speed_lookups_by_year
 
 logger = logging.getLogger(__name__)
 
@@ -233,7 +232,13 @@ def player_year_features_from_df(
     min_pitches_per_pitch_type: int,
     sprint_speed_lookup: Optional[Dict[int, float]] = None,
 ) -> Optional[Dict[str, object]]:
-    """Calculate player-year pitch-derived archetype-friendly features for each player-year."""
+    """
+    Calculate player-year pitch-derived archetype-friendly features for one player-year.
+
+    Loop-based reference implementation. The production build path uses the vectorized
+    ``compute_player_year_features``; ``tests/test_vectorized_features_parity.py`` keeps
+    the two in agreement.
+    """
     # Compute the in-zone flag.
     in_zone = compute_in_zone(df)
     # Compute the swing flag.
@@ -460,7 +465,7 @@ def player_year_features_from_df(
     raise ValueError(f"Unknown role: {role}")
 
 
-def _validate_feature_row(row: Dict[str, object], *, role: str) -> None:
+def _validate_feature_frame(df: pd.DataFrame, *, role: str) -> None:
     """Checks to catch broken derived flags."""
     # Required rates for batter features.
     required_rates = ["swing_rate", "zone_swing_rate", "chase_rate", "whiff_rate"]
@@ -497,18 +502,18 @@ def _validate_feature_row(row: Dict[str, object], *, role: str) -> None:
             "iffb_percent_allowed",
         ]
 
-    for k in rates_to_check:
-        if k not in row:
-            continue
-        v = row[k]
-        if v is None:
-            continue
-        try:
-            fv = float(v)  # type: ignore[arg-type]
-        except Exception:
-            continue
-        if not np.isnan(fv) and (fv < 0.0 or fv > 1.0):
-            raise ValueError(f"Sanity check failed: {k}={fv} out of [0,1] for role={role}, player={row.get('player_id')}, year={row.get('year')}")
+    cols = [c for c in rates_to_check if c in df.columns]
+    if not cols:
+        return
+    vals = df[cols].apply(pd.to_numeric, errors="coerce")
+    bad = vals.lt(0.0) | vals.gt(1.0)
+    if bad.any().any():
+        flat = bad.stack()
+        idx, col = flat[flat].index[0]
+        raise ValueError(
+            f"Sanity check failed: {col}={vals.at[idx, col]} out of [0,1] for role={role}, "
+            f"player={df.at[idx, 'player_id']}, year={df.at[idx, 'year']}"
+        )
 
 
 def build_bronze_to_silver_features(
@@ -580,9 +585,9 @@ def build_bronze_to_silver_features(
         )
 
     # Bronze is loaded and processed one calendar year at a time so peak memory is
-    # bounded by a single season regardless of the requested range. Feature rows are
+    # bounded by a single season regardless of the requested range. Feature tables are
     # tiny compared to pitch data, so accumulating them across years is cheap.
-    feature_rows_by_role: Dict[str, List[Dict[str, object]]] = {"batter": [], "pitcher": []}
+    feature_frames_by_role: Dict[str, List[pd.DataFrame]] = {"batter": [], "pitcher": []}
     loaded_any = False
 
     for batch_year in range(bronze_start.year, bronze_end.year + 1):
@@ -608,6 +613,9 @@ def build_bronze_to_silver_features(
             return {"status": "error", "message": msg, "years_written": [], "rows_written": 0}
 
         raw["year"] = pd.to_datetime(raw["game_date"]).dt.year
+        # (game_pk, at_bat_number, pitch_number) uniquely identify a pitch, so one
+        # batch-wide dedupe is equivalent to the old per-player-year dedupe.
+        raw = _dedupe_pitches(raw)
 
         # Normally just batch_year, but derived from game_date to stay faithful to the data.
         year_lo = int(raw["year"].min())
@@ -643,58 +651,33 @@ def build_bronze_to_silver_features(
 
         for role in ("batter", "pitcher"):
             with log_phase(logger, f"year={batch_year}: compute {role} features"):
-                # Group the raw data by role and drop missing values.
-                grouped = raw.groupby(role, dropna=True)
-                n_players = grouped.ngroups
-                for idx, (player_id, player_df) in enumerate(grouped):
-                    if pd.isna(player_id):
-                        continue
-                    pid = int(player_id)
-                    if (idx % 100) == 0:
-                        logger.info(
-                            "Year %d role %s: processing player %d / %d (player_id=%s)",
-                            batch_year,
-                            role,
-                            idx + 1,
-                            n_players,
-                            pid,
-                        )
+                # Aggregate every (player, year) group in one vectorized pass.
+                feats = compute_player_year_features(
+                    raw,
+                    role=role,
+                    min_pitches_pitcher=min_pitches_pitcher,
+                    min_pitches_batter=min_pitches_batter,
+                    min_batted_ball_batter=min_batted_ball_batter,
+                    hard_hit_speed_mph=hard_hit_speed_mph,
+                    min_pitches_per_pitch_type=min_pitches_per_pitch_type,
+                )
+                if feats.empty:
+                    logger.warning("No %s feature rows for year batch %d.", role, batch_year)
+                    continue
 
-                    # Group the player data by year and deduplicate pitches.
-                    for year, df_year in player_df.groupby("year"):
-                        y = int(year)
-                        df_work = _dedupe_pitches(df_year.copy())
+                feats.insert(
+                    3, "player_name", feats["player_id"].map(name_by_mlbam).fillna("")
+                )
 
-                        display_name = resolve_mlbam_display_name(pid, name_by_mlbam)
+                # Enrichment side tables join on (player_id, year).
+                if role == "batter":
+                    feats = apply_sprint_speed_lookup(feats, sprint_lookup_by_year)
+                    feats = merge_defence_features(feats, defence_by_year)
+                    feats = merge_primary_position_features(feats, positions_by_year)
+                feats = merge_bio_features(feats, bios_by_year)
 
-                        # Build the player-year features from the deduplicated data (sprint speed lookup included for batters).
-                        row = player_year_features_from_df(
-                            df=df_work,
-                            role=role,
-                            player_id=pid,
-                            year=y,
-                            player_name=display_name,
-                            min_pitches_pitcher=min_pitches_pitcher,
-                            min_pitches_batter=min_pitches_batter,
-                            min_batted_ball_batter=min_batted_ball_batter,
-                            hard_hit_speed_mph=hard_hit_speed_mph,
-                            min_pitches_per_pitch_type=min_pitches_per_pitch_type,
-                            sprint_speed_lookup=sprint_lookup_by_year.get(y) if role == "batter" else None,
-                        )
-                        if row is None:
-                            continue
-
-                        # Merge the defence metrics and primary position into the row.
-                        if role == "batter":
-                            merge_defence_into_row(row, defence_by_year.get(y, {}))
-                            merge_primary_position_into_row(row, positions_by_year.get(y, {}))
-
-                        # Merge player bio (age, height, weight, birth info) into the row.
-                        merge_bio_into_row(row, bios_by_year.get(y, {}))
-
-                        # Validate the feature row.
-                        _validate_feature_row(row, role=role)
-                        feature_rows_by_role[role].append(row)
+                _validate_feature_frame(feats, role=role)
+                feature_frames_by_role[role].append(feats)
 
         # Release this year's pitch data before loading the next.
         del raw
@@ -714,12 +697,12 @@ def build_bronze_to_silver_features(
 
     with log_phase(logger, "write silver feature tables"):
         for role in ("batter", "pitcher"):
-            feature_rows = feature_rows_by_role[role]
-            if not feature_rows:
+            feature_frames = feature_frames_by_role[role]
+            if not feature_frames:
                 logger.warning("No feature rows computed for role=%s.", role)
                 continue
 
-            features_df = pd.DataFrame(feature_rows)
+            features_df = pd.concat(feature_frames, ignore_index=True, sort=False)
             # Write the feature rows to the S3 bucket.
             for y in sorted(features_df["year"].unique()):
                 y = int(y)

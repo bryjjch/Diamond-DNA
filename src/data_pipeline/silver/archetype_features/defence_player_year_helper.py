@@ -238,19 +238,24 @@ def load_defence_metrics_by_player_year(
     return out
 
 
-def merge_defence_into_row(
-    row: Dict[str, object],
-    defence: Dict[int, Dict[str, float]],
-) -> None:
-    """Mutates ``row`` with defensive columns for this player-year (batters)."""
-    pid = int(row["player_id"])
-    m = defence.get(pid)
-    if not m:
-        for k in _DEFENCE_METRIC_KEYS:
-            row[k] = float("nan")
-        return
-    for k in _DEFENCE_METRIC_KEYS:
-        row[k] = m.get(k, float("nan"))
+def merge_defence_features(
+    features: pd.DataFrame,
+    defence_by_year: Dict[int, Dict[int, Dict[str, float]]],
+) -> pd.DataFrame:
+    """
+    Left-join defensive metric columns onto ``(player_id, year)`` feature rows (batters).
+
+    Unknown player-years get NaN for every defensive metric.
+    """
+    rows = [
+        {"player_id": pid, "year": y, **metrics}
+        for y, by_pid in defence_by_year.items()
+        for pid, metrics in by_pid.items()
+    ]
+    defence_df = pd.DataFrame(rows, columns=["player_id", "year", *_DEFENCE_METRIC_KEYS]).astype(
+        {"player_id": "int64", "year": "int64"}
+    )
+    return features.merge(defence_df, on=["player_id", "year"], how="left")
 
 
 def load_primary_positions_by_player_year(
@@ -321,10 +326,23 @@ def load_primary_positions_by_player_year(
     return positions
 
 
-def merge_primary_position_into_row(
-    row: Dict[str, object],
-    positions: Dict[int, str],
-) -> None:
-    """Mutates ``row`` with ``primary_position`` derived from defensive data (batters)."""
-    pid = int(row["player_id"])
-    row["primary_position"] = positions.get(pid, UNKNOWN_POSITION)
+def merge_primary_position_features(
+    features: pd.DataFrame,
+    positions_by_year: Dict[int, Dict[int, str]],
+) -> pd.DataFrame:
+    """
+    Left-join ``primary_position`` onto ``(player_id, year)`` feature rows (batters).
+
+    Player-years with no defensive data get ``UNKNOWN_POSITION``.
+    """
+    rows = [
+        {"player_id": pid, "year": y, "primary_position": pos}
+        for y, by_pid in positions_by_year.items()
+        for pid, pos in by_pid.items()
+    ]
+    positions_df = pd.DataFrame(rows, columns=["player_id", "year", "primary_position"]).astype(
+        {"player_id": "int64", "year": "int64"}
+    )
+    out = features.merge(positions_df, on=["player_id", "year"], how="left")
+    out["primary_position"] = out["primary_position"].fillna(UNKNOWN_POSITION)
+    return out

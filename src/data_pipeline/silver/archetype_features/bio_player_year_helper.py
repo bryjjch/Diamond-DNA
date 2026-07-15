@@ -87,12 +87,24 @@ def load_player_bios_by_year(
     return out
 
 
-def merge_bio_into_row(
-    row: Dict[str, object],
-    bios: Dict[int, Dict[str, object]],
-) -> None:
-    """Mutates ``row`` with bio columns for this player-year (both roles)."""
-    pid = int(row["player_id"])
-    m = bios.get(pid) or _empty_bio()
-    for k in BIO_KEYS:
-        row[k] = m.get(k, float("nan") if k in _BIO_NUMERIC_KEYS else "")
+def merge_bio_features(
+    features: pd.DataFrame,
+    bios_by_year: Dict[int, Dict[int, Dict[str, object]]],
+) -> pd.DataFrame:
+    """
+    Left-join bio columns onto ``(player_id, year)`` feature rows (both roles).
+
+    Unknown player-years get NaN for numeric bio columns and "" for text columns.
+    """
+    rows = [
+        {"player_id": pid, "year": y, **vals}
+        for y, by_pid in bios_by_year.items()
+        for pid, vals in by_pid.items()
+    ]
+    bio_df = pd.DataFrame(rows, columns=["player_id", "year", *BIO_KEYS]).astype(
+        {"player_id": "int64", "year": "int64"}
+    )
+    out = features.merge(bio_df, on=["player_id", "year"], how="left")
+    for k in _BIO_TEXT_KEYS:
+        out[k] = out[k].fillna("")
+    return out

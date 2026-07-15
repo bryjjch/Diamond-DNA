@@ -61,3 +61,30 @@ def build_sprint_speed_lookups_by_year(
 
         sprint_lookup_by_year[y] = {int(pid): float(ss) for pid, ss in zip(tmp[id_col], tmp[ss_col])}
     return sprint_lookup_by_year
+
+
+def apply_sprint_speed_lookup(
+    features: pd.DataFrame,
+    sprint_lookup_by_year: Dict[int, Dict[int, float]],
+) -> pd.DataFrame:
+    """
+    Overlay leaderboard sprint speed onto ``sprint_speed_mean`` (batters).
+
+    Years present in ``sprint_lookup_by_year`` use the leaderboard value — NaN when the
+    player is missing from it. Years without a leaderboard keep the pitch-level
+    ``sprint_speed`` column mean already in ``features``.
+    """
+    if not sprint_lookup_by_year:
+        return features
+    rows = [
+        {"player_id": pid, "year": y, "_sprint_lookup": speed}
+        for y, by_pid in sprint_lookup_by_year.items()
+        for pid, speed in by_pid.items()
+    ]
+    lookup_df = pd.DataFrame(rows, columns=["player_id", "year", "_sprint_lookup"]).astype(
+        {"player_id": "int64", "year": "int64"}
+    )
+    out = features.merge(lookup_df, on=["player_id", "year"], how="left")
+    has_lookup_year = out["year"].isin(set(sprint_lookup_by_year))
+    out.loc[has_lookup_year, "sprint_speed_mean"] = out.loc[has_lookup_year, "_sprint_lookup"]
+    return out.drop(columns="_sprint_lookup")
