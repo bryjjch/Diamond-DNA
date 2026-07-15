@@ -14,15 +14,17 @@ from __future__ import annotations
 
 import argparse
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
 
 from ....common.runtime_helpers import event_or_env_str, yesterday_utc_date_str
-from ....common.s3_helpers import read_parquet_from_s3, write_parquet_to_s3
+from ....common.s3_helpers import get_s3_client, read_parquet_from_s3, write_parquet_to_s3
 from ....common.settings import PipelineSettings
+from ....common.timing import log_phase
 from .archetype_feature_defs import (
     DEFAULT_BARREL_DEF,
     batted_ball_type_rates,
@@ -53,6 +55,53 @@ from .player_names_helper import (
 from .sprint_helper import build_sprint_speed_lookups_by_year
 
 logger = logging.getLogger(__name__)
+
+# Columns the feature builder actually uses. Bronze Statcast files carry ~90 columns,
+# so projecting the read to these cuts parse time and memory several-fold. Columns
+# missing from older files are skipped at read time rather than erroring.
+BRONZE_STATCAST_COLUMNS: Tuple[str, ...] = (
+    # identity / grouping / dedupe
+    "game_date",
+    "date",
+    "batter",
+    "pitcher",
+    "game_pk",
+    "at_bat_number",
+    "pitch_number",
+    # location & swing/zone flags
+    "description",
+    "type",
+    "zone",
+    "plate_x",
+    "plate_z",
+    "sz_top",
+    "sz_bot",
+    # pitch physics (pitcher features)
+    "pitch_type",
+    "release_speed",
+    "release_spin_rate",
+    "release_extension",
+    "pfx_x",
+    "pfx_z",
+    "delta_run_exp",
+    # batted-ball outcomes / platoon splits (batter features)
+    "stand",
+    "events",
+    "bb_type",
+    "hc_x",
+    "hc_y",
+    "launch_speed",
+    "launch_angle",
+    "iso_value",
+    "estimated_slg_using_speedangle",
+    "estimated_woba_using_speedangle",
+    "woba_value",
+    "sprint_speed",
+)
+
+# S3 GETs are I/O-bound; concurrent day reads speed up the load phase near-linearly.
+DEFAULT_S3_READ_WORKERS = 16
+
 
 def _parse_date(value: str) -> date:
     """Parse a date string and return a date object."""
@@ -106,19 +155,53 @@ def load_bronze_statcast_range(
     bronze_prefix: str,
     start_date: date,
     end_date: date,
+    *,
+    columns: Optional[Sequence[str]] = BRONZE_STATCAST_COLUMNS,
+    max_workers: int = DEFAULT_S3_READ_WORKERS,
 ) -> Optional[pd.DataFrame]:
-    """Load and concatenate bronze daily files in [start_date, end_date]."""
-    frames: List[pd.DataFrame] = []
-    for d in _date_range(start_date, end_date):
-        key = (
+    """
+    Load and concatenate bronze daily files in [start_date, end_date].
+
+    Days are fetched concurrently and each read is projected to ``columns``
+    (pass ``columns=None`` to load every column).
+    """
+    keys = [
+        (
             f"{bronze_prefix.strip('/')}/year={d.year}"
             f"/date={d.strftime('%Y-%m-%d')}/statcast_pitches.parquet"
         )
-        df = read_parquet_from_s3(bucket, key)
-        if df is None or df.empty:
-            continue
-        frames.append(normalize_statcast_bronze_df(df))
+        for d in _date_range(start_date, end_date)
+    ]
+    if not keys:
+        return None
 
+    client = get_s3_client()
+
+    def _read_day(key: str) -> Optional[pd.DataFrame]:
+        return read_parquet_from_s3(
+            bucket,
+            key,
+            client=client,
+            log_read=False,
+            missing_key_log="none",
+            columns=columns,
+        )
+
+    frames: List[pd.DataFrame] = []
+    with ThreadPoolExecutor(max_workers=min(max_workers, len(keys))) as pool:
+        for df in pool.map(_read_day, keys):
+            if df is None or df.empty:
+                continue
+            frames.append(normalize_statcast_bronze_df(df))
+
+    logger.info(
+        "Loaded %d/%d bronze daily files (%d rows) for %s..%s",
+        len(frames),
+        len(keys),
+        sum(len(f) for f in frames),
+        start_date,
+        end_date,
+    )
     if not frames:
         return None
     return pd.concat(frames, ignore_index=True)
@@ -482,41 +565,13 @@ def build_bronze_to_silver_features(
         year_to_date,
     )
 
-    # Load the bronze Statcast data.
-    full_raw = load_bronze_statcast_range(bucket, bronze_statcast_prefix, bronze_start, bronze_end)
-    if full_raw is None or full_raw.empty:
-        msg = f"No bronze Statcast data between {bronze_start} and {bronze_end}"
-        logger.warning(msg)
-        return {
-            "status": "no_data",
-            "message": msg,
-            "years_written": [],
-            "rows_written": 0,
-        }
-
-    missing_roles = [r for r in ("pitcher", "batter") if r not in full_raw.columns]
-    if missing_roles:
-        msg = f"Column(s) not found in bronze data: {', '.join(missing_roles)}"
-        logger.error(msg)
-        return {"status": "error", "message": msg, "years_written": [], "rows_written": 0}
-
-    if "game_date" not in full_raw.columns:
-        msg = "Column 'game_date' not found in bronze data (needed for yearly grouping)"
-        logger.error(msg)
-        return {"status": "error", "message": msg, "years_written": [], "rows_written": 0}
-
-    full_raw = full_raw.copy()
-    full_raw["year"] = pd.to_datetime(full_raw["game_date"]).dt.year
-
-    year_lo = int(full_raw["year"].min())
-    year_hi = int(full_raw["year"].max())
-
     chadwick_df: Optional[pd.DataFrame] = None
     name_by_mlbam: Dict[int, str] = {}
     try:
         from pybaseball import chadwick_register as _chadwick_register
 
-        chadwick_df = _chadwick_register()
+        with log_phase(logger, "load Chadwick register"):
+            chadwick_df = _chadwick_register()
         name_by_mlbam = build_mlbam_statcast_style_name_map(chadwick_df)
     except Exception as exc:
         logger.warning(
@@ -524,31 +579,56 @@ def build_bronze_to_silver_features(
             exc,
         )
 
-    # Player bios apply to both roles; load once per year.
-    bios_by_year: Dict[int, Dict[int, Dict[str, object]]] = {
-        y: load_player_bios_by_year(bucket, raw_bio_prefix, y)
-        for y in range(year_lo, year_hi + 1)
-    }
+    # Bronze is loaded and processed one calendar year at a time so peak memory is
+    # bounded by a single season regardless of the requested range. Feature rows are
+    # tiny compared to pitch data, so accumulating them across years is cheap.
+    feature_rows_by_role: Dict[str, List[Dict[str, object]]] = {"batter": [], "pitcher": []}
+    loaded_any = False
 
-    years_written: List[int] = []
-    rows_written = 0
+    for batch_year in range(bronze_start.year, bronze_end.year + 1):
+        batch_start = max(bronze_start, date(batch_year, 1, 1))
+        batch_end = min(bronze_end, date(batch_year, 12, 31))
 
-    for role in ("batter", "pitcher"):
-        # Build the sprint speed lookup by year.
-        sprint_lookup_by_year: Dict[int, Dict[int, float]] = {}
-        if role == "batter":
-            sprint_lookup_by_year = build_sprint_speed_lookups_by_year(
+        with log_phase(logger, f"year={batch_year}: load bronze {batch_start}..{batch_end}"):
+            raw = load_bronze_statcast_range(bucket, bronze_statcast_prefix, batch_start, batch_end)
+        if raw is None or raw.empty:
+            logger.warning("No bronze Statcast data between %s and %s", batch_start, batch_end)
+            continue
+        loaded_any = True
+
+        missing_roles = [r for r in ("pitcher", "batter") if r not in raw.columns]
+        if missing_roles:
+            msg = f"Column(s) not found in bronze data: {', '.join(missing_roles)}"
+            logger.error(msg)
+            return {"status": "error", "message": msg, "years_written": [], "rows_written": 0}
+
+        if "game_date" not in raw.columns:
+            msg = "Column 'game_date' not found in bronze data (needed for yearly grouping)"
+            logger.error(msg)
+            return {"status": "error", "message": msg, "years_written": [], "rows_written": 0}
+
+        raw["year"] = pd.to_datetime(raw["game_date"]).dt.year
+
+        # Normally just batch_year, but derived from game_date to stay faithful to the data.
+        year_lo = int(raw["year"].min())
+        year_hi = int(raw["year"].max())
+
+        with log_phase(logger, f"year={batch_year}: load bio/sprint/defence lookups"):
+            # Player bios apply to both roles; load once per year.
+            bios_by_year: Dict[int, Dict[int, Dict[str, object]]] = {
+                y: load_player_bios_by_year(bucket, raw_bio_prefix, y)
+                for y in range(year_lo, year_hi + 1)
+            }
+            # Sprint speed, defence metrics, and primary positions apply to batters only.
+            sprint_lookup_by_year: Dict[int, Dict[int, float]] = build_sprint_speed_lookups_by_year(
                 bucket,
                 raw_running_prefix,
                 year_lo,
                 year_hi,
                 sprint_speed_min_opp,
             )
-
-        # Build the defence metrics by year.
-        defence_by_year: Dict[int, Dict[int, Dict[str, float]]] = {}
-        positions_by_year: Dict[int, Dict[int, str]] = {}
-        if role == "batter":
+            defence_by_year: Dict[int, Dict[int, Dict[str, float]]] = {}
+            positions_by_year: Dict[int, Dict[int, str]] = {}
             for y in range(year_lo, year_hi + 1):
                 defence_by_year[y] = load_defence_metrics_by_player_year(
                     bucket,
@@ -561,75 +641,103 @@ def build_bronze_to_silver_features(
                     y,
                 )
 
-        feature_rows: List[Dict[str, object]] = []
-        # Group the full raw data by role and drop missing values.
-        grouped = full_raw.groupby(role, dropna=True)
-        n_players = grouped.ngroups
-        for idx, (player_id, player_df) in enumerate(grouped):
-            if pd.isna(player_id):
+        for role in ("batter", "pitcher"):
+            with log_phase(logger, f"year={batch_year}: compute {role} features"):
+                # Group the raw data by role and drop missing values.
+                grouped = raw.groupby(role, dropna=True)
+                n_players = grouped.ngroups
+                for idx, (player_id, player_df) in enumerate(grouped):
+                    if pd.isna(player_id):
+                        continue
+                    pid = int(player_id)
+                    if (idx % 100) == 0:
+                        logger.info(
+                            "Year %d role %s: processing player %d / %d (player_id=%s)",
+                            batch_year,
+                            role,
+                            idx + 1,
+                            n_players,
+                            pid,
+                        )
+
+                    # Group the player data by year and deduplicate pitches.
+                    for year, df_year in player_df.groupby("year"):
+                        y = int(year)
+                        df_work = _dedupe_pitches(df_year.copy())
+
+                        display_name = resolve_mlbam_display_name(pid, name_by_mlbam)
+
+                        # Build the player-year features from the deduplicated data (sprint speed lookup included for batters).
+                        row = player_year_features_from_df(
+                            df=df_work,
+                            role=role,
+                            player_id=pid,
+                            year=y,
+                            player_name=display_name,
+                            min_pitches_pitcher=min_pitches_pitcher,
+                            min_pitches_batter=min_pitches_batter,
+                            min_batted_ball_batter=min_batted_ball_batter,
+                            hard_hit_speed_mph=hard_hit_speed_mph,
+                            min_pitches_per_pitch_type=min_pitches_per_pitch_type,
+                            sprint_speed_lookup=sprint_lookup_by_year.get(y) if role == "batter" else None,
+                        )
+                        if row is None:
+                            continue
+
+                        # Merge the defence metrics and primary position into the row.
+                        if role == "batter":
+                            merge_defence_into_row(row, defence_by_year.get(y, {}))
+                            merge_primary_position_into_row(row, positions_by_year.get(y, {}))
+
+                        # Merge player bio (age, height, weight, birth info) into the row.
+                        merge_bio_into_row(row, bios_by_year.get(y, {}))
+
+                        # Validate the feature row.
+                        _validate_feature_row(row, role=role)
+                        feature_rows_by_role[role].append(row)
+
+        # Release this year's pitch data before loading the next.
+        del raw
+
+    if not loaded_any:
+        msg = f"No bronze Statcast data between {bronze_start} and {bronze_end}"
+        logger.warning(msg)
+        return {
+            "status": "no_data",
+            "message": msg,
+            "years_written": [],
+            "rows_written": 0,
+        }
+
+    years_written: List[int] = []
+    rows_written = 0
+
+    with log_phase(logger, "write silver feature tables"):
+        for role in ("batter", "pitcher"):
+            feature_rows = feature_rows_by_role[role]
+            if not feature_rows:
+                logger.warning("No feature rows computed for role=%s.", role)
                 continue
-            pid = int(player_id)
-            if (idx % 100) == 0:
-                logger.info("Role %s: processing player %d / %d (player_id=%s)", role, idx + 1, n_players, pid)
 
-            # Group the player data by year and deduplicate pitches.
-            for year, df_year in player_df.groupby("year"):
-                y = int(year)
-                df_work = _dedupe_pitches(df_year.copy())
-
-                display_name = resolve_mlbam_display_name(pid, name_by_mlbam)
-
-                # Build the player-year features from the deduplicated data (sprint speed lookup included for batters).
-                row = player_year_features_from_df(
-                    df=df_work,
-                    role=role,
-                    player_id=pid,
-                    year=y,
-                    player_name=display_name,
-                    min_pitches_pitcher=min_pitches_pitcher,
-                    min_pitches_batter=min_pitches_batter,
-                    min_batted_ball_batter=min_batted_ball_batter,
-                    hard_hit_speed_mph=hard_hit_speed_mph,
-                    min_pitches_per_pitch_type=min_pitches_per_pitch_type,
-                    sprint_speed_lookup=sprint_lookup_by_year.get(y) if role == "batter" else None,
-                )
-                if row is None:
+            features_df = pd.DataFrame(feature_rows)
+            # Write the feature rows to the S3 bucket.
+            for y in sorted(features_df["year"].unique()):
+                y = int(y)
+                df_year = features_df[features_df["year"] == y]
+                if df_year.empty:
                     continue
-
-                # Merge the defence metrics and primary position into the row.
-                if role == "batter":
-                    merge_defence_into_row(row, defence_by_year.get(y, {}))
-                    merge_primary_position_into_row(row, positions_by_year.get(y, {}))
-
-                # Merge player bio (age, height, weight, birth info) into the row.
-                merge_bio_into_row(row, bios_by_year.get(y, {}))
-
-                # Validate the feature row.
-                _validate_feature_row(row, role=role)
-                feature_rows.append(row)
-
-        if not feature_rows:
-            logger.warning("No feature rows computed for role=%s.", role)
-            continue
-
-        features_df = pd.DataFrame(feature_rows)
-        # Write the feature rows to the S3 bucket.
-        for y in range(year_lo, year_hi + 1):
-            df_year = features_df[features_df["year"] == y]
-            if df_year.empty:
-                continue
-            out_key = f"{silver_prefix.strip('/')}/{role}/year={y}/player_year_features.parquet"
-            logger.info(
-                "Writing %d %s feature rows to s3://%s/%s",
-                len(df_year),
-                role,
-                bucket,
-                out_key,
-            )
-            write_parquet_to_s3(df_year, bucket, out_key, log_write=False)
-            rows_written += len(df_year)
-            if y not in years_written:
-                years_written.append(y)
+                out_key = f"{silver_prefix.strip('/')}/{role}/year={y}/player_year_features.parquet"
+                logger.info(
+                    "Writing %d %s feature rows to s3://%s/%s",
+                    len(df_year),
+                    role,
+                    bucket,
+                    out_key,
+                )
+                write_parquet_to_s3(df_year, bucket, out_key, log_write=False)
+                rows_written += len(df_year)
+                if y not in years_written:
+                    years_written.append(y)
 
     years_written.sort()
     message = (
