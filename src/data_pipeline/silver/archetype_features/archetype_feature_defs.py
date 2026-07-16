@@ -128,8 +128,10 @@ def compute_barrel_flag(
 
 def spray_angle_degrees(hc_x: pd.Series, hc_y: pd.Series) -> pd.Series:
     """Horizontal spray angle in degrees (Statcast hc_x / hc_y convention)."""
-    x = pd.to_numeric(hc_x, errors="coerce")
-    y = pd.to_numeric(hc_y, errors="coerce")
+    # astype guards against nullable inputs (Float64/Arrow): pd.NA -> np.nan so the
+    # numpy ops and comparisons downstream stay well-defined.
+    x = pd.to_numeric(hc_x, errors="coerce").astype("float64")
+    y = pd.to_numeric(hc_y, errors="coerce").astype("float64")
     rad = np.arctan2(x - _HC_HOME_X, _HC_HOME_Y - y)
     return pd.Series(np.degrees(rad), index=hc_x.index)
 

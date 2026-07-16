@@ -9,17 +9,24 @@ from typing import Any, Literal, Optional, Sequence
 import boto3
 import pandas as pd
 import pyarrow.parquet as pq
+from botocore.config import Config
 
 logger = logging.getLogger(__name__)
 
 _s3_client: Optional[Any] = None
+
+# The shared client is used from thread pools (e.g. bronze daily reads run with up to
+# 16 workers); keep the connection pool at least that large to avoid discards.
+_MAX_POOL_CONNECTIONS = 32
 
 
 def get_s3_client() -> Any:
     """Return a shared Boto3 S3 client (credentials from env / IAM role)."""
     global _s3_client
     if _s3_client is None:
-        _s3_client = boto3.client("s3")
+        _s3_client = boto3.client(
+            "s3", config=Config(max_pool_connections=_MAX_POOL_CONNECTIONS)
+        )
     return _s3_client
 
 

@@ -117,6 +117,16 @@ def normalize_statcast_bronze_df(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     if "game_date" not in out.columns and "date" in out.columns:
         out = out.rename(columns={"date": "game_date"})
+    # Bronze parquet stores numerics as pandas nullable dtypes (Float64/Int64), whose
+    # pd.NA breaks numpy ops in the feature builders; convert to float64 with np.nan.
+    nullable_numeric = {
+        col: "float64"
+        for col, dtype in out.dtypes.items()
+        if isinstance(dtype, pd.api.extensions.ExtensionDtype)
+        and pd.api.types.is_numeric_dtype(dtype)
+    }
+    if nullable_numeric:
+        out = out.astype(nullable_numeric)
     for col in ("pitcher", "batter"):
         if col in out.columns:
             out[col] = pd.to_numeric(out[col], errors="coerce")

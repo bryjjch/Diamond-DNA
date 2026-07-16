@@ -5,6 +5,9 @@ import math
 import numpy as np
 import pandas as pd
 
+from src.data_pipeline.silver.archetype_features.archetype_feature_defs import (
+    pull_oppo_columns,
+)
 from src.data_pipeline.silver.archetype_features.defence_player_year_helper import (
     UNKNOWN_POSITION,
     merge_defence_features,
@@ -12,6 +15,9 @@ from src.data_pipeline.silver.archetype_features.defence_player_year_helper impo
 )
 from src.data_pipeline.silver.archetype_features.player_year_feature_table import (
     compute_player_year_features,
+)
+from src.data_pipeline.silver.archetype_features.silver_features_build import (
+    normalize_statcast_bronze_df,
 )
 from src.data_pipeline.silver.archetype_features.sprint_helper import apply_sprint_speed_lookup
 
@@ -143,6 +149,41 @@ def test_apply_sprint_speed_lookup_year_scoping():
     assert out.at[(1, 2023), "sprint_speed_mean"] == 26.0
     assert out.at[(1, 2024), "sprint_speed_mean"] == 29.0
     assert math.isnan(out.at[(2, 2024), "sprint_speed_mean"])
+
+
+def test_pull_oppo_columns_accepts_nullable_dtypes():
+    # Bronze parquet loads hc_x/hc_y as pandas nullable Float64 (pd.NA, not np.nan).
+    raw = pd.DataFrame(
+        {
+            "stand": pd.array(["R", "L", None, "R"], dtype="str"),
+            "hc_x": pd.array([100.1, None, 130.0, 90.5], dtype="Float64"),
+            "hc_y": pd.array([150.0, 140.0, None, 120.0], dtype="Float64"),
+        }
+    )
+    pull, oppo = pull_oppo_columns(raw)
+    assert pull.tolist()[0] == 1.0  # RHB, spray angle well negative -> pulled
+    assert math.isnan(pull.iloc[1]) and math.isnan(pull.iloc[2])  # missing coord/stand
+    assert oppo.notna().sum() == 2
+
+
+def test_nullable_bronze_dtypes_flow_through_batter_features():
+    raw = _batter_df(600, with_bip=300, n_walks=20, n_pa=200)
+    # Simulate bronze parquet dtypes: every numeric column nullable, strings as `str`.
+    raw = raw.astype(
+        {c: "Float64" for c in raw.columns if raw[c].dtype.kind == "f"}
+        | {"year": "Int64", "description": "str"}
+    )
+    raw.loc[raw.index[:5], "launch_speed"] = pd.NA
+
+    norm = normalize_statcast_bronze_df(raw)
+    assert not any(
+        isinstance(d, pd.api.extensions.ExtensionDtype) and pd.api.types.is_numeric_dtype(d)
+        for d in norm.dtypes
+    )
+
+    feats = compute_player_year_features(norm, role="batter", **PARAMS)
+    assert len(feats) == 1
+    assert feats.iloc[0]["walk_rate"] == 20 / 200
 
 
 def test_merge_defence_and_position_features():
