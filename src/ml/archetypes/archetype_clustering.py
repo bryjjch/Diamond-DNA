@@ -21,7 +21,7 @@ from sklearn.mixture import GaussianMixture
 from sklearn.metrics import davies_bouldin_score, silhouette_score
 from sklearn.preprocessing import RobustScaler
 
-from ...data_pipeline.gold.gold_preprocessing import ID_COLUMNS
+from ...data_pipeline.gold.gold_archetype_preprocessing import ID_COLUMNS
 from ...common.runtime_helpers import current_utc_year, event_or_env_int, event_or_env_str
 from ...common.s3_helpers import get_s3_client, read_parquet_from_s3, write_parquet_to_s3
 from ...common.settings import PipelineSettings
@@ -380,7 +380,7 @@ def fit_archetype_clustering(
         "clustering_index_columns": index_cols,
         "feature_exclusion_rules": [
             "player_id, player_name, year, role, n_pitches_total → not used as PCA/GMM features (index via prepare_dataframe_for_archetype_clustering when present as columns)",
-            "All other column selection for clustering is done in data_pipeline.gold.gold_preprocessing (archetype-training drop pass and role-irrelevant drop pass)",
+            "All other column selection for clustering is done in data_pipeline.gold.gold_archetype_preprocessing (archetype-training drop pass and role-irrelevant drop pass)",
         ],
         "scaler": "RobustScaler",
         "pca_mode": pca_mode,
