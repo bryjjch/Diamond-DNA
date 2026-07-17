@@ -26,6 +26,7 @@ import pandas as pd
 from ....common.runtime_helpers import current_utc_year, event_or_env_int, event_or_env_str
 from ....common.s3_helpers import read_parquet_from_s3, write_parquet_to_s3
 from ....common.settings import PipelineSettings
+from ....common.timing import log_phase
 
 logger = logging.getLogger(__name__)
 
@@ -130,14 +131,15 @@ def build_standard_stats_range(
 
     years_written: List[int] = []
     rows_written = 0
-    for year in range(start_year, end_year + 1):
-        written = build_standard_stats_for_year(
-            bucket, raw_standard_stats_prefix, silver_prefix, year
-        )
-        year_rows = sum(written.values())
-        if year_rows:
-            years_written.append(year)
-            rows_written += year_rows
+    with log_phase(logger, f"silver standard stats years {start_year}..{end_year}"):
+        for year in range(start_year, end_year + 1):
+            written = build_standard_stats_for_year(
+                bucket, raw_standard_stats_prefix, silver_prefix, year
+            )
+            year_rows = sum(written.values())
+            if year_rows:
+                years_written.append(year)
+                rows_written += year_rows
 
     if not years_written:
         msg = f"No bronze standard stats found between {start_year} and {end_year}"

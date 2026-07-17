@@ -78,13 +78,11 @@ def test_load_and_merge_bio(monkeypatch):
     assert math.isnan(bios[2]["bio_age"])
     assert bios[2]["bio_birth_place"] == ""
 
-    row = {"player_id": 671096}
-    bio_player_year.merge_bio_into_row(row, bios)
-    assert row["bio_age"] == 25.0
-    assert row["bio_birth_date"] == "1999-06-01"
+    features = pd.DataFrame({"player_id": [671096, 999], "year": [2024, 2024]})
+    merged = bio_player_year.merge_bio_features(features, {2024: bios}).set_index("player_id")
+    assert merged.at[671096, "bio_age"] == 25.0
+    assert merged.at[671096, "bio_birth_date"] == "1999-06-01"
 
-    # Unknown player still gets the full key set with NaN/empty values.
-    missing = {"player_id": 999}
-    bio_player_year.merge_bio_into_row(missing, bios)
-    assert math.isnan(missing["bio_age"])
-    assert missing["bio_birth_place"] == ""
+    # Unknown player still gets the full column set with NaN/empty values.
+    assert math.isnan(merged.at[999, "bio_age"])
+    assert merged.at[999, "bio_birth_place"] == ""

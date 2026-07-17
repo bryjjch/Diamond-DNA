@@ -8,6 +8,7 @@ and uploads each day to S3 as Parquet at {s3_prefix}/year=Y/date=D/statcast_pitc
 
 import argparse
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
@@ -68,25 +69,40 @@ def fetch_pitch_data_for_date(
         logger.warning("No data returned for %s", date_str)
         return pd.DataFrame()
 
+    fetch_started = time.monotonic()
     df = retry_with_backoff(
         f"Statcast pitch data for {date_str}",
         _fetch,
         max_retries=max_retries,
     )
+    fetch_s = time.monotonic() - fetch_started
     if df is None:
-        return {"status": "error", "message": "Fetch failed after retries"}
+        return {"status": "error", "message": "Fetch failed after retries", "fetch_s": fetch_s}
     if df.empty:
         logger.warning(f"No Statcast data for {date_str}; skipping upload")
-        return {"status": "no_data", "message": f"No Statcast data for {date_str}", "records": 0}
+        return {
+            "status": "no_data",
+            "message": f"No Statcast data for {date_str}",
+            "records": 0,
+            "fetch_s": fetch_s,
+        }
 
     s3_key = (
         f"{s3_prefix.strip('/')}/year={ingest_date.year}"
         f"/date={ingest_date.strftime('%Y-%m-%d')}/statcast_pitches.parquet"
     )
     logger.info(f"Uploading {len(df)} records to s3://{s3_bucket}/{s3_key}")
+    upload_started = time.monotonic()
     write_parquet_to_s3(df, s3_bucket, s3_key, log_write=False)
+    upload_s = time.monotonic() - upload_started
     logger.info(f"Successfully uploaded to s3://{s3_bucket}/{s3_key}")
-    return {"status": "ok", "message": "OK", "records": len(df)}
+    return {
+        "status": "ok",
+        "message": "OK",
+        "records": len(df),
+        "fetch_s": fetch_s,
+        "upload_s": upload_s,
+    }
 
 
 def ingest_date_range(start_date_str: str, end_date_str: str, s3_bucket: str, s3_prefix: str) -> dict:
@@ -128,11 +144,15 @@ def ingest_date_range(start_date_str: str, end_date_str: str, s3_bucket: str, s3
     days_no_data = 0
     days_error = 0
     errors = []
+    fetch_s_total = 0.0
+    upload_s_total = 0.0
 
     current = start_dt
     while current <= end_dt:
         date_str = current.strftime('%Y-%m-%d')
         result = fetch_pitch_data_for_date(date_str, s3_bucket, s3_prefix)
+        fetch_s_total += result.get("fetch_s", 0.0)
+        upload_s_total += result.get("upload_s", 0.0)
 
         if result["status"] == "ok":
             total_records += result.get("records", 0)
@@ -150,6 +170,15 @@ def ingest_date_range(start_date_str: str, end_date_str: str, s3_bucket: str, s3
     else:
         status = "ok"
 
+    logger.info(
+        "[timing] statcast %s..%s: fetch %.1fs, upload %.1fs across %d day(s)",
+        start_date_str,
+        end_date_str,
+        fetch_s_total,
+        upload_s_total,
+        days_ok + days_no_data + days_error,
+    )
+
     return {
         "status": status,
         "message": f"Processed {start_date_str} to {end_date_str}: {days_ok} ok, {days_no_data} no data, {days_error} errors",
@@ -158,6 +187,8 @@ def ingest_date_range(start_date_str: str, end_date_str: str, s3_bucket: str, s3
         "days_no_data": days_no_data,
         "days_error": days_error,
         "errors": errors,
+        "fetch_s": round(fetch_s_total, 2),
+        "upload_s": round(upload_s_total, 2),
     }
 
 
