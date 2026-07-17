@@ -358,7 +358,7 @@ resource "aws_lambda_function" "silver_standard_stats" {
   tags = var.tags
 }
 
-# Gold preprocessing Lambda (container: data_pipeline.gold.gold_preprocessing)
+# Gold preprocessing Lambda (container: data_pipeline.gold.gold_archetype_preprocessing)
 # Build: docker build --platform linux/amd64 --provenance=false -f docker/gold/Dockerfile -t <ecr_url>:<tag> .
 resource "aws_lambda_function" "gold_preprocessing" {
   function_name = "${var.name_prefix}-gold-preprocessing"
