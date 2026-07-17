@@ -696,12 +696,7 @@ def main() -> None:
     )
 
     if result["status"] == "error":
-        logger.error(result["message"])
         raise SystemExit(1)
-    if result["status"] == "no_data":
-        logger.warning(result["message"])
-    else:
-        logger.info(result["message"])
 
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
