@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 # season stats, regular season, one split per player who logged the group's stats.
 MLB_SEASON_STATS_URL = (
     "https://statsapi.mlb.com/api/v1/stats"
-    "?stats=season&season={year}&group={group}&gameType=R&limit=2000"
+    "?stats=season&season={year}&group={group}&gameType=R&limit=2000&playerPool=all"
 )
 
 # (bronze_col, statsapi_stat_key) pairs. Explicit so the bronze schema stays stable
