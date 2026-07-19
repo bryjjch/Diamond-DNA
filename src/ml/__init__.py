@@ -8,9 +8,11 @@ __all__ = [
     "build_cluster_labels",
     "build_gold_archetype_clustering",
     "build_gold_player_similarity",
+    "build_marcel_baseline",
     "compute_cluster_profiles",
     "fit_archetype_clustering",
     "generate_cluster_labels",
+    "MarcelConfig",
     "numeric_feature_columns",
     "PlayerSimilarityConfig",
     "prepare_dataframe_for_archetype_clustering",
@@ -34,6 +36,7 @@ _LABELING_EXPORTS = frozenset(
     }
 )
 _SIMILARITY_EXPORTS = frozenset({"build_gold_player_similarity", "PlayerSimilarityConfig"})
+_BASELINE_EXPORTS = frozenset({"build_marcel_baseline", "MarcelConfig"})
 
 
 def __getattr__(name: str):
@@ -49,4 +52,8 @@ def __getattr__(name: str):
         from .knn_neighbours import player_similarity as _ps
 
         return getattr(_ps, name)
+    if name in _BASELINE_EXPORTS:
+        from .baselines import marcel_baseline as _mb
+
+        return getattr(_mb, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
