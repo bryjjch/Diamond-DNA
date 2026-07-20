@@ -19,6 +19,8 @@ class PipelineSettings:
     raw_statcast_prefix: str
     feature_prefix: str
     gold_prefix: str
+    predictions_prefix: str
+    models_prefix: str
     raw_running_prefix: str
     raw_defence_prefix: str
     raw_bio_prefix: str
@@ -36,6 +38,12 @@ class PipelineSettings:
             raw_statcast_prefix=raw,
             feature_prefix=_strip_prefix(e.get("FEATURE_PREFIX", "silver")),
             gold_prefix=_strip_prefix(e.get("GOLD_PREFIX", "gold/statcast")),
+            # Model inference outputs stay in gold (the API serves them); fitted
+            # estimators and evaluation metadata live outside it.
+            predictions_prefix=_strip_prefix(
+                e.get("PREDICTIONS_PREFIX", "gold/predictions")
+            ),
+            models_prefix=_strip_prefix(e.get("MODELS_PREFIX", "models")),
             raw_running_prefix=_strip_prefix(
                 e.get("RAW_RUNNING_PREFIX", "bronze/statcast_running")
             ),

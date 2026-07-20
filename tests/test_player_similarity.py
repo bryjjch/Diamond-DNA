@@ -106,6 +106,8 @@ def test_build_gold_player_similarity_requires_positive_k():
     r = build_gold_player_similarity(
         bucket="b",
         gold_prefix="g",
+        predictions_prefix="p",
+        models_prefix="m",
         start_year=2024,
         end_year=2024,
         role_filter="pitcher",
@@ -131,6 +133,8 @@ def test_build_gold_player_similarity_missing_model_records_error(monkeypatch):
     result = build_gold_player_similarity(
         bucket="test-bucket",
         gold_prefix="gold/statcast",
+        predictions_prefix="gold/predictions",
+        models_prefix="models",
         start_year=2025,
         end_year=2025,
         role_filter="pitcher",
@@ -174,6 +178,8 @@ def test_build_gold_player_similarity_writes_artifacts(monkeypatch):
     result = build_gold_player_similarity(
         bucket="test-bucket",
         gold_prefix="gold/statcast",
+        predictions_prefix="gold/predictions",
+        models_prefix="models",
         start_year=2025,
         end_year=2025,
         role_filter="pitcher",
@@ -183,7 +189,10 @@ def test_build_gold_player_similarity_writes_artifacts(monkeypatch):
     assert result["status"] == "ok"
     assert result["rows_written"] == 35 * 5
     assert len(parquet_writes) == 1
-    assert "player_year_similar_neighbors.parquet" in parquet_writes[0][0]
+    assert (
+        parquet_writes[0][0]
+        == "gold/predictions/neighbors/pitcher/year=2025/player_year_similar_neighbors.parquet"
+    )
     nbr = parquet_writes[0][1]
     assert list(nbr.columns) == [
         "player_id",
@@ -197,6 +206,7 @@ def test_build_gold_player_similarity_writes_artifacts(monkeypatch):
     ]
     assert (nbr["player_id"] != nbr["neighbor_player_id"]).all()
     assert len(json_writes) == 1
+    assert "models/similarity/pitcher/year=2025/metadata.json" in json_writes
     meta = next(iter(json_writes.values()))
     assert meta["similarity_method"] == "knn_pca_space"
     assert meta["k_neighbors_requested"] == 5

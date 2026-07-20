@@ -253,6 +253,8 @@ def test_build_gold_archetype_clustering_requires_config():
     result = build_gold_archetype_clustering(
         bucket="b",
         gold_prefix="g",
+        predictions_prefix="p",
+        models_prefix="m",
         start_year=2024,
         end_year=2024,
         role_filter="pitcher",
@@ -267,6 +269,8 @@ def test_build_gold_archetype_clustering_rejects_config_and_configs_by_role():
     result = build_gold_archetype_clustering(
         bucket="b",
         gold_prefix="g",
+        predictions_prefix="p",
+        models_prefix="m",
         start_year=2024,
         end_year=2024,
         role_filter="all",
@@ -328,6 +332,8 @@ def test_build_gold_archetype_clustering_writes_artifacts(monkeypatch):
     result = build_gold_archetype_clustering(
         bucket="test-bucket",
         gold_prefix="gold/statcast",
+        predictions_prefix="gold/predictions",
+        models_prefix="models",
         start_year=2025,
         end_year=2025,
         role_filter="pitcher",
@@ -337,7 +343,10 @@ def test_build_gold_archetype_clustering_writes_artifacts(monkeypatch):
     assert result["status"] == "ok"
     assert result["rows_written"] == 120
     assert len(writes) == 1
-    assert "player_year_archetypes.parquet" in writes[0][0]
+    assert (
+        writes[0][0]
+        == "gold/predictions/archetypes/pitcher/year=2025/player_year_archetypes.parquet"
+    )
     written_cols = set(writes[0][1].columns)
     assert "cluster_id" in written_cols
     assert "cluster_id_secondary" in written_cols
@@ -345,8 +354,9 @@ def test_build_gold_archetype_clustering_writes_artifacts(monkeypatch):
     assert "prob_secondary" in written_cols
     assert {f"prob_{k}" for k in range(3)}.issubset(written_cols)
     assert len(joblib_writes) == 1
-    assert any("archetype_clustering.joblib" in k for k in joblib_writes)
+    assert "models/archetypes/pitcher/year=2025/model.joblib" in joblib_writes
     assert len(json_writes) == 1
+    assert "models/archetypes/pitcher/year=2025/metadata.json" in json_writes
     meta = next(iter(json_writes.values()))
     assert meta["n_clusters"] == 3
     assert meta["pca_n_components"] == 3
@@ -411,6 +421,8 @@ def test_build_gold_archetype_clustering_configs_by_role_different_k(monkeypatch
     result = build_gold_archetype_clustering(
         bucket="test-bucket",
         gold_prefix="gold/statcast",
+        predictions_prefix="gold/predictions",
+        models_prefix="models",
         start_year=2025,
         end_year=2025,
         role_filter="all",

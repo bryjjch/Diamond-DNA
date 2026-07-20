@@ -289,6 +289,8 @@ def test_build_marcel_baseline_writes_projections_and_metrics(monkeypatch):
     result = build_marcel_baseline(
         bucket="bucket",
         gold_prefix="gold/statcast",
+        predictions_prefix="gold/predictions",
+        models_prefix="models",
         start_year=2025,
         end_year=2025,
         role_filter="batter",
@@ -298,11 +300,11 @@ def test_build_marcel_baseline_writes_projections_and_metrics(monkeypatch):
     assert result["rows_written"] == 1
     assert len(writes) == 1
     out_key, out_df = writes[0]
-    assert "gold/statcast/baselines/marcel/batter/year=2025/marcel_projections.parquet" in out_key
+    assert out_key == "gold/predictions/marcel/batter/year=2025/marcel_projections.parquet"
     assert "proj_obp" in out_df.columns and "proj_hr" in out_df.columns
     assert "target_obp" in out_df.columns  # actuals carried alongside for scoring
 
-    assert any("marcel_metrics.json" in k for k in metadata_writes)
+    assert "models/marcel/batter/year=2025/metrics.json" in metadata_writes
     meta = next(iter(metadata_writes.values()))
     assert meta["role"] == "batter"
     assert meta["method"] == "marcel_the_monkey_baseline"
@@ -312,8 +314,10 @@ def test_build_marcel_baseline_writes_projections_and_metrics(monkeypatch):
 
 def test_build_marcel_baseline_rejects_bad_inputs():
     assert build_marcel_baseline(
-        bucket="b", gold_prefix="g", start_year=2025, end_year=2024
+        bucket="b", gold_prefix="g", predictions_prefix="p", models_prefix="m",
+        start_year=2025, end_year=2024
     )["status"] == "error"
     assert build_marcel_baseline(
-        bucket="b", gold_prefix="g", start_year=2024, end_year=2025, role_filter="catcher"
+        bucket="b", gold_prefix="g", predictions_prefix="p", models_prefix="m",
+        start_year=2024, end_year=2025, role_filter="catcher"
     )["status"] == "error"

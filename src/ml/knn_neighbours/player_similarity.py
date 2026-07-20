@@ -18,6 +18,7 @@ import sklearn
 from sklearn.neighbors import NearestNeighbors
 
 from ...common.runtime_helpers import current_utc_year, event_or_env_int, event_or_env_str
+from ...common.lake_keys import gold_feature_key, model_key, prediction_key
 from ...common.s3_helpers import get_s3_client, read_parquet_from_s3, write_parquet_to_s3
 from ...common.settings import PipelineSettings
 
@@ -219,6 +220,8 @@ def build_gold_player_similarity(
     *,
     bucket: str,
     gold_prefix: str,
+    predictions_prefix: str,
+    models_prefix: str,
     start_year: int,
     end_year: int,
     role_filter: str = "all",
@@ -227,7 +230,9 @@ def build_gold_player_similarity(
     """
     Read gold preprocessed parquet + archetype clustering joblib per role/year, write KNN table + metadata.
 
-    Requires ``archetype_clustering.joblib`` from the archetype clustering stage for each partition processed.
+    Requires ``models/archetypes/{role}/year=Y/model.joblib`` from the archetype clustering
+    stage for each partition processed. The neighbor table goes to ``predictions_prefix``;
+    run metadata goes to ``models_prefix``.
     """
     if config.k_neighbors < 1:
         return {
@@ -280,12 +285,11 @@ def build_gold_player_similarity(
     for role in roles:
         for year in range(start_year, end_year + 1):
             # Get the input key for the gold player-year output.
-            in_key = (
-                f"{gold_prefix.strip('/')}/{role}/year={year}"
-                "/player_year_features_preprocessed.parquet"
+            in_key = gold_feature_key(
+                gold_prefix, role, year, "player_year_features_preprocessed.parquet"
             )
             # Get the model key for the archetype clustering model.
-            model_key = f"{gold_prefix.strip('/')}/{role}/year={year}/archetype_clustering.joblib"
+            bundle_key = model_key(models_prefix, "archetypes", role, year, "model.joblib")
 
             # Read the gold player-year output.
             df = read_parquet_from_s3(bucket, in_key, missing_key_log="none")
@@ -298,9 +302,9 @@ def build_gold_player_similarity(
                 df["role"] = role
             
             # Load the archetype clustering bundle.
-            bundle = load_archetype_clustering_bundle_from_s3(bucket, model_key)
+            bundle = load_archetype_clustering_bundle_from_s3(bucket, bundle_key)
             if bundle is None:
-                msg = f"role={role} year={year}: missing archetype model at s3://{bucket}/{model_key}"
+                msg = f"role={role} year={year}: missing archetype model at s3://{bucket}/{bundle_key}"
                 logger.warning("Skipping player similarity: %s", msg)
                 errors.append(msg)
                 continue
@@ -335,14 +339,17 @@ def build_gold_player_similarity(
             )
 
             # Write the neighbor table to S3.
-            out_parquet_key = (
-                f"{gold_prefix.strip('/')}/{role}/year={year}"
-                "/player_year_similar_neighbors.parquet"
+            out_parquet_key = prediction_key(
+                predictions_prefix,
+                "neighbors",
+                role,
+                year,
+                "player_year_similar_neighbors.parquet",
             )
             write_parquet_to_s3(neighbors_df, bucket, out_parquet_key, log_write=False)
 
             # Write the metadata to S3.
-            meta_key = f"{gold_prefix.strip('/')}/{role}/year={year}/player_similarity_metadata.json"
+            meta_key = model_key(models_prefix, "similarity", role, year, "metadata.json")
             meta = _similarity_metadata(
                 role=role,
                 year=year,
@@ -352,7 +359,7 @@ def build_gold_player_similarity(
                 metric=config.metric,
                 minkowski_p=config.minkowski_p,
                 algorithm=config.algorithm,
-                source_model_key=model_key,
+                source_model_key=bundle_key,
                 neighbors_parquet_key=out_parquet_key,
             )
             _write_json_to_s3(bucket, meta_key, meta)
@@ -428,6 +435,8 @@ def main() -> None:
     parser.add_argument("--end-year", type=int, default=cy)
     parser.add_argument("--bucket", type=str, default=cfg.s3_bucket)
     parser.add_argument("--gold-prefix", type=str, default=cfg.gold_prefix)
+    parser.add_argument("--predictions-prefix", type=str, default=cfg.predictions_prefix)
+    parser.add_argument("--models-prefix", type=str, default=cfg.models_prefix)
     parser.add_argument(
         "--role",
         choices=("all", "batter", "pitcher", "catcher"),
@@ -470,6 +479,8 @@ def main() -> None:
     result = build_gold_player_similarity(
         bucket=args.bucket,
         gold_prefix=args.gold_prefix,
+        predictions_prefix=args.predictions_prefix,
+        models_prefix=args.models_prefix,
         start_year=args.start_year,
         end_year=args.end_year,
         role_filter=args.role,
@@ -497,6 +508,10 @@ def handler(event: dict, context) -> dict:
     end_year = event_or_env_int(event, "end_year", "END_YEAR", cy)
     bucket = event_or_env_str(event, "s3_bucket", "S3_BUCKET", cfg.s3_bucket)
     gold_prefix = event_or_env_str(event, "gold_prefix", "GOLD_PREFIX", cfg.gold_prefix)
+    predictions_prefix = event_or_env_str(
+        event, "predictions_prefix", "PREDICTIONS_PREFIX", cfg.predictions_prefix
+    )
+    models_prefix = event_or_env_str(event, "models_prefix", "MODELS_PREFIX", cfg.models_prefix)
     role = event_or_env_str(event, "role", "ROLE", "all")
 
     k_raw = str(event_or_env_str(event, "k_neighbors", "K_NEIGHBORS", "10")).strip()
@@ -534,6 +549,8 @@ def handler(event: dict, context) -> dict:
     result = build_gold_player_similarity(
         bucket=bucket,
         gold_prefix=gold_prefix,
+        predictions_prefix=predictions_prefix,
+        models_prefix=models_prefix,
         start_year=start_year,
         end_year=end_year,
         role_filter=role,

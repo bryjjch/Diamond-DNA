@@ -41,6 +41,7 @@ import numpy as np
 import pandas as pd
 
 from ...common.runtime_helpers import current_utc_year, event_or_env_int, event_or_env_str
+from ...common.lake_keys import model_key, prediction_key
 from ...common.s3_helpers import get_s3_client, read_parquet_from_s3, write_parquet_to_s3
 from ...common.settings import PipelineSettings
 
@@ -363,6 +364,8 @@ def build_marcel_baseline(
     *,
     bucket: str,
     gold_prefix: str,
+    predictions_prefix: str,
+    models_prefix: str,
     start_year: int,
     end_year: int,
     role_filter: str = "all",
@@ -371,8 +374,8 @@ def build_marcel_baseline(
     """Build, write, and score Marcel projections for each role-year.
 
     Reads the gold performance-prediction training matrix per role-year, writes
-    ``marcel_projections.parquet`` + ``marcel_metrics.json`` under
-    ``{gold_prefix}/baselines/marcel/{role}/year=Y/``.
+    ``marcel_projections.parquet`` under ``{predictions_prefix}/marcel/{role}/year=Y/``
+    and the scoring sidecar to ``{models_prefix}/marcel/{role}/year=Y/metrics.json``.
     """
     if start_year > end_year:
         return {
@@ -415,10 +418,12 @@ def build_marcel_baseline(
             )
             metrics = score_projections(proj, role=role)
 
-            out_key = f"{gp}/baselines/marcel/{role}/year={year}/marcel_projections.parquet"
+            out_key = prediction_key(
+                predictions_prefix, "marcel", role, year, "marcel_projections.parquet"
+            )
             write_parquet_to_s3(proj, bucket, out_key, log_write=False)
 
-            meta_key = f"{gp}/baselines/marcel/{role}/year={year}/marcel_metrics.json"
+            meta_key = model_key(models_prefix, "marcel", role, year, "metrics.json")
             meta = _projection_metadata(
                 role=role,
                 year=year,
@@ -485,6 +490,8 @@ def main() -> None:
     parser.add_argument("--end-year", type=int, default=cy)
     parser.add_argument("--bucket", type=str, default=cfg.s3_bucket)
     parser.add_argument("--gold-prefix", type=str, default=cfg.gold_prefix)
+    parser.add_argument("--predictions-prefix", type=str, default=cfg.predictions_prefix)
+    parser.add_argument("--models-prefix", type=str, default=cfg.models_prefix)
     parser.add_argument(
         "--role",
         choices=("all", *VALID_ROLES),
@@ -516,6 +523,8 @@ def main() -> None:
     result = build_marcel_baseline(
         bucket=args.bucket,
         gold_prefix=args.gold_prefix,
+        predictions_prefix=args.predictions_prefix,
+        models_prefix=args.models_prefix,
         start_year=args.start_year,
         end_year=args.end_year,
         role_filter=args.role,
@@ -538,11 +547,17 @@ def handler(event: dict, context) -> dict:
     end_year = event_or_env_int(event, "end_year", "END_YEAR", cy)
     bucket = event_or_env_str(event, "s3_bucket", "S3_BUCKET", cfg.s3_bucket)
     gold_prefix = event_or_env_str(event, "gold_prefix", "GOLD_PREFIX", cfg.gold_prefix)
+    predictions_prefix = event_or_env_str(
+        event, "predictions_prefix", "PREDICTIONS_PREFIX", cfg.predictions_prefix
+    )
+    models_prefix = event_or_env_str(event, "models_prefix", "MODELS_PREFIX", cfg.models_prefix)
     role = event_or_env_str(event, "role", "ROLE", "all")
 
     result = build_marcel_baseline(
         bucket=bucket,
         gold_prefix=gold_prefix,
+        predictions_prefix=predictions_prefix,
+        models_prefix=models_prefix,
         start_year=start_year,
         end_year=end_year,
         role_filter=role,

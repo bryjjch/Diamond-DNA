@@ -23,6 +23,7 @@ from sklearn.preprocessing import RobustScaler
 
 from ...data_pipeline.gold.gold_archetype_preprocessing import ID_COLUMNS
 from ...common.runtime_helpers import current_utc_year, event_or_env_int, event_or_env_str
+from ...common.lake_keys import gold_feature_key, model_key, prediction_key
 from ...common.s3_helpers import get_s3_client, read_parquet_from_s3, write_parquet_to_s3
 from ...common.settings import PipelineSettings
 
@@ -450,12 +451,14 @@ def _build_cluster_labels_for_role_year(
     year: int,
     feature_cols: Sequence[str],
     bucket: str,
-    gold_prefix: str,
+    predictions_prefix: str,
 ) -> Dict[str, Any]:
     """Defer the import so the labeling module (and Gemini SDK) is only loaded when needed."""
     from .archetype_labeling import build_cluster_labels
 
-    labels_key = f"{gold_prefix.strip('/')}/{role}/year={year}/cluster_labels.json"
+    labels_key = prediction_key(
+        predictions_prefix, "archetypes", role, year, "cluster_labels.json"
+    )
     return build_cluster_labels(
         labeled,
         role=role,
@@ -470,6 +473,8 @@ def build_gold_archetype_clustering(
     *,
     bucket: str,
     gold_prefix: str,
+    predictions_prefix: str,
+    models_prefix: str,
     start_year: int,
     end_year: int,
     role_filter: str = "all",
@@ -478,6 +483,9 @@ def build_gold_archetype_clustering(
 ) -> Dict[str, Any]:
     """
     Read gold preprocessed parquet per role/year, fit clustering, write assignments + model + metadata.
+
+    Assignments and the cluster-label sidecar go to ``predictions_prefix`` (the API serves
+    them); the fitted bundle and training metadata go to ``models_prefix``.
 
     Pass either ``config`` (same hyperparameters for every role processed) or ``configs_by_role``
     (pitcher vs batter). When ``role_filter`` is ``pitcher`` or ``batter``, only that role's
@@ -549,9 +557,8 @@ def build_gold_archetype_clustering(
     for role in roles:
         for year in range(start_year, end_year + 1):
             # Read the gold player-year output.
-            in_key = (
-                f"{gold_prefix.strip('/')}/{role}/year={year}"
-                "/player_year_features_preprocessed.parquet"
+            in_key = gold_feature_key(
+                gold_prefix, role, year, "player_year_features_preprocessed.parquet"
             )
             df = read_parquet_from_s3(bucket, in_key, missing_key_log="none")
             if df is None or df.empty:
@@ -578,19 +585,17 @@ def build_gold_archetype_clustering(
                 continue
 
             # Write the archetype assignments to S3.
-            out_parquet_key = (
-                f"{gold_prefix.strip('/')}/{role}/year={year}/player_year_archetypes.parquet"
+            out_parquet_key = prediction_key(
+                predictions_prefix, "archetypes", role, year, "player_year_archetypes.parquet"
             )
             write_parquet_to_s3(labeled, bucket, out_parquet_key, log_write=False)
 
             # Write the archetype clustering model to S3.
-            model_key = f"{gold_prefix.strip('/')}/{role}/year={year}/archetype_clustering.joblib"
-            _write_joblib_to_s3(bundle, bucket, model_key)
+            bundle_key = model_key(models_prefix, "archetypes", role, year, "model.joblib")
+            _write_joblib_to_s3(bundle, bucket, bundle_key)
 
             # Write the archetype clustering metadata to S3.
-            meta_key = (
-                f"{gold_prefix.strip('/')}/{role}/year={year}/archetype_clustering_metadata.json"
-            )
+            meta_key = model_key(models_prefix, "archetypes", role, year, "metadata.json")
             _write_json_to_s3(bucket, meta_key, metadata)
 
             # Generate + write the cluster_labels.json sidecar (Gemini). A failure here
@@ -603,7 +608,7 @@ def build_gold_archetype_clustering(
                     year=year,
                     feature_cols=metadata["feature_columns"],
                     bucket=bucket,
-                    gold_prefix=gold_prefix,
+                    predictions_prefix=predictions_prefix,
                 )
             except Exception as exc:
                 msg = f"role={role} year={year}: label generation failed: {exc}"
@@ -705,6 +710,8 @@ def main() -> None:
     parser.add_argument("--end-year", type=int, default=cy)
     parser.add_argument("--bucket", type=str, default=cfg.s3_bucket)
     parser.add_argument("--gold-prefix", type=str, default=cfg.gold_prefix)
+    parser.add_argument("--predictions-prefix", type=str, default=cfg.predictions_prefix)
+    parser.add_argument("--models-prefix", type=str, default=cfg.models_prefix)
     parser.add_argument(
         "--role",
         choices=("all", "batter", "pitcher", "catcher"),
@@ -814,6 +821,8 @@ def main() -> None:
     result = build_gold_archetype_clustering(
         bucket=args.bucket,
         gold_prefix=args.gold_prefix,
+        predictions_prefix=args.predictions_prefix,
+        models_prefix=args.models_prefix,
         start_year=args.start_year,
         end_year=args.end_year,
         role_filter=args.role,
@@ -872,6 +881,10 @@ def handler(event: dict, context) -> dict:
     end_year = event_or_env_int(event, "end_year", "END_YEAR", cy)
     bucket = event_or_env_str(event, "s3_bucket", "S3_BUCKET", cfg.s3_bucket)
     gold_prefix = event_or_env_str(event, "gold_prefix", "GOLD_PREFIX", cfg.gold_prefix)
+    predictions_prefix = event_or_env_str(
+        event, "predictions_prefix", "PREDICTIONS_PREFIX", cfg.predictions_prefix
+    )
+    models_prefix = event_or_env_str(event, "models_prefix", "MODELS_PREFIX", cfg.models_prefix)
     role = event_or_env_str(event, "role", "ROLE", "all")
 
     rs_raw = event_or_env_str(event, "random_state", "RANDOM_STATE", "42")
@@ -993,6 +1006,8 @@ def handler(event: dict, context) -> dict:
     result = build_gold_archetype_clustering(
         bucket=bucket,
         gold_prefix=gold_prefix,
+        predictions_prefix=predictions_prefix,
+        models_prefix=models_prefix,
         start_year=start_year,
         end_year=end_year,
         role_filter=role,
