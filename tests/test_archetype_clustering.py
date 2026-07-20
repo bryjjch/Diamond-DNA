@@ -331,7 +331,7 @@ def test_build_gold_archetype_clustering_writes_artifacts(monkeypatch):
 
     result = build_gold_archetype_clustering(
         bucket="test-bucket",
-        gold_prefix="gold/statcast",
+        gold_prefix="gold/features",
         predictions_prefix="gold/predictions",
         models_prefix="models",
         start_year=2025,
@@ -420,7 +420,7 @@ def test_build_gold_archetype_clustering_configs_by_role_different_k(monkeypatch
 
     result = build_gold_archetype_clustering(
         bucket="test-bucket",
-        gold_prefix="gold/statcast",
+        gold_prefix="gold/features",
         predictions_prefix="gold/predictions",
         models_prefix="models",
         start_year=2025,

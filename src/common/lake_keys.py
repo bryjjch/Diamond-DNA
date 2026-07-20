@@ -5,14 +5,22 @@ Centralizes the layout so producers and consumers cannot drift apart:
 - ``gold_prefix``        feature tables written by ``data_pipeline.gold``
 - ``predictions_prefix`` model inference outputs the API serves
 - ``models_prefix``      fitted estimators + evaluation metadata (not served)
+
+All three are ``{prefix}/{dataset}/{role}/year=Y/{filename}``.
 """
 
 from __future__ import annotations
 
+# Gold feature datasets, named so they are siblings rather than one implicit default.
+ARCHETYPES = "archetypes"
+PERFORMANCE_PREDICTION = "performance_prediction"
 
-def gold_feature_key(gold_prefix: str, role: str, year: int, filename: str) -> str:
+
+def gold_feature_key(
+    gold_prefix: str, dataset: str, role: str, year: int, filename: str
+) -> str:
     """Key for a gold-layer feature table partition."""
-    return f"{gold_prefix.strip('/')}/{role}/year={year}/{filename}"
+    return f"{gold_prefix.strip('/')}/{dataset}/{role}/year={year}/{filename}"
 
 
 def prediction_key(

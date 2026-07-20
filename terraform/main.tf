@@ -31,7 +31,7 @@ module "lambda" {
   data_lake_bucket_arn  = module.s3.data_lake_bucket_arn
   s3_prefix             = var.statcast_ingestion_s3_prefix
   silver_s3_prefix      = var.statcast_silver_s3_prefix
-  gold_s3_prefix        = var.statcast_gold_s3_prefix
+  gold_s3_prefix        = var.gold_s3_prefix
 
   schedule_expression        = var.statcast_ingestion_schedule_expression
   silver_schedule_expression = var.statcast_silver_schedule_expression
@@ -66,7 +66,7 @@ module "api" {
   name_prefix           = var.name_prefix
   data_lake_bucket_name = module.s3.data_lake_bucket_name
   data_lake_bucket_arn  = module.s3.data_lake_bucket_arn
-  gold_s3_prefix        = var.statcast_gold_s3_prefix
+  gold_s3_prefix        = var.gold_s3_prefix
 
   webapp_year        = var.api_webapp_year
   memory_size        = var.api_memory_size

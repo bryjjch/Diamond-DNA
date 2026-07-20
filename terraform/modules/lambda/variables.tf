@@ -50,9 +50,9 @@ variable "silver_s3_prefix" {
 }
 
 variable "gold_s3_prefix" {
-  description = "S3 prefix for gold ML-ready Statcast data (e.g. gold/statcast)"
+  description = "S3 prefix for gold model-ready feature datasets (e.g. gold/features)"
   type        = string
-  default     = "gold/statcast"
+  default     = "gold/features"
 }
 
 variable "schedule_expression" {

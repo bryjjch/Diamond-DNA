@@ -41,7 +41,12 @@ import numpy as np
 import pandas as pd
 
 from ...common.runtime_helpers import current_utc_year, event_or_env_int, event_or_env_str
-from ...common.lake_keys import model_key, prediction_key
+from ...common.lake_keys import (
+    PERFORMANCE_PREDICTION,
+    gold_feature_key,
+    model_key,
+    prediction_key,
+)
 from ...common.s3_helpers import get_s3_client, read_parquet_from_s3, write_parquet_to_s3
 from ...common.settings import PipelineSettings
 
@@ -398,7 +403,6 @@ def build_marcel_baseline(
 
     cfg = config or MarcelConfig()
     roles = VALID_ROLES if role_filter == "all" else (role_filter,)
-    gp = gold_prefix.strip("/")
 
     rows_written = 0
     years_written: set[int] = set()
@@ -406,8 +410,8 @@ def build_marcel_baseline(
 
     for role in roles:
         for year in range(start_year, end_year + 1):
-            in_key = (
-                f"{gp}/performance_prediction/{role}/year={year}/training_matrix.parquet"
+            in_key = gold_feature_key(
+                gold_prefix, PERFORMANCE_PREDICTION, role, year, "training_matrix.parquet"
             )
             matrix = read_parquet_from_s3(bucket, in_key, missing_key_log="none")
             if matrix is None or matrix.empty or "player_id" not in matrix.columns:

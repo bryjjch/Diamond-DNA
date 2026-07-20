@@ -181,7 +181,7 @@ def test_build_performance_training_matrices_writes_matrix_and_metadata(monkeypa
     result = build_performance_training_matrices(
         bucket="bucket",
         silver_prefix="silver",
-        gold_prefix="gold/statcast",
+        gold_prefix="gold/features",
         start_year=2025,
         end_year=2025,
         role_filter="batter",
@@ -192,7 +192,7 @@ def test_build_performance_training_matrices_writes_matrix_and_metadata(monkeypa
     assert len(writes) == 1
     out_key, out_df = writes[0]
     assert (
-        "gold/statcast/performance_prediction/batter/year=2025/training_matrix.parquet"
+        "gold/features/performance_prediction/batter/year=2025/training_matrix.parquet"
         in out_key
     )
     assert "target_ops" in out_df.columns

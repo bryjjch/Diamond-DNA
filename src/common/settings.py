@@ -37,7 +37,7 @@ class PipelineSettings:
             s3_bucket=bucket,
             raw_statcast_prefix=raw,
             feature_prefix=_strip_prefix(e.get("FEATURE_PREFIX", "silver")),
-            gold_prefix=_strip_prefix(e.get("GOLD_PREFIX", "gold/statcast")),
+            gold_prefix=_strip_prefix(e.get("GOLD_PREFIX", "gold/features")),
             # Model inference outputs stay in gold (the API serves them); fitted
             # estimators and evaluation metadata live outside it.
             predictions_prefix=_strip_prefix(
