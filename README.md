@@ -64,10 +64,19 @@ names, see [Revamping](#revamping)):
 | -------- | ------------------------ | ----------------- | ------------------- |
 | 06:00    | `diamond-dna-statcast-ingestion` | pybaseball  | `bronze/statcast/`  |
 | 06:15    | `diamond-dna-silver-feature-build` | bronze | `silver/{role}/`    |
-| 06:30    | `diamond-dna-gold-preprocessing`   | silver | `gold/statcast/{role}/` |
+| 06:30    | `diamond-dna-gold-preprocessing`   | silver | `gold/features/archetypes/{role}/` |
 
-ML stages (archetype clustering, KNN similarity) are run manually via the CLIs
-under `src/ml/`; their outputs are what the HTTP API serves.
+ML stages (archetype clustering, KNN similarity, Marcel baseline) are run
+manually via the CLIs under `src/ml/`. They read `gold/features/` and split
+their outputs by consumer:
+
+| Prefix                                    | Holds                                              |
+| ----------------------------------------- | -------------------------------------------------- |
+| `gold/features/{dataset}/{role}/year=Y/`  | model-ready feature tables (`archetypes`, `performance_prediction`) |
+| `gold/predictions/{artifact}/{role}/year=Y/` | inference outputs meant to be served                |
+| `models/{model}/{role}/year=Y/`           | fitted estimators + training/evaluation metadata     |
+
+Keys are built by `src/common/lake_keys.py` — add prefixes there, not inline.
 
 ## Layout
 
