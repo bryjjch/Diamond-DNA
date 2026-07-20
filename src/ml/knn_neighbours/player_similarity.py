@@ -7,6 +7,7 @@ import argparse
 import io
 import json
 import logging
+import sys
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Mapping, Optional, Sequence
@@ -21,8 +22,18 @@ from ...common.runtime_helpers import current_utc_year, event_or_env_int, event_
 from ...common.lake_keys import ARCHETYPES, gold_feature_key, model_key, prediction_key
 from ...common.s3_helpers import get_s3_client, read_parquet_from_s3, write_parquet_to_s3
 from ...common.settings import PipelineSettings
+from ..archetypes.archetype_clustering import (
+    ArchetypeClusteringConfig,
+    ArchetypeClusteringConfigsByRole,
+)
 
 logger = logging.getLogger(__name__)
+
+# archetype_clustering.py is run directly to train models, so its dataclasses get
+# pickled under module "__main__" instead of their real dotted path. Alias them onto
+# __main__ here so joblib.load can resolve those references from any entry point.
+sys.modules["__main__"].ArchetypeClusteringConfig = ArchetypeClusteringConfig
+sys.modules["__main__"].ArchetypeClusteringConfigsByRole = ArchetypeClusteringConfigsByRole
 
 
 def _write_json_to_s3(bucket: str, key: str, payload: Mapping[str, Any]) -> None:
