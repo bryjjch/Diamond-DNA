@@ -13,6 +13,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from ...common.lake_keys import ARCHETYPES, gold_feature_key
 from ...common.runtime_helpers import current_utc_year, event_or_env_int, event_or_env_str
 from ...common.s3_helpers import get_s3_client, read_parquet_from_s3, write_parquet_to_s3
 from ...common.settings import PipelineSettings
@@ -443,14 +444,17 @@ def build_silver_to_gold_preprocessing(
             gold_df, artifacts = preprocess_role_year_df(
                 df, role=output_role, year=year, config=cfg
             )
-            out_key = (
-                f"{gold_prefix.strip('/')}/{output_role}/year={year}"
-                "/player_year_features_preprocessed.parquet"
+            out_key = gold_feature_key(
+                gold_prefix,
+                ARCHETYPES,
+                output_role,
+                year,
+                "player_year_features_preprocessed.parquet",
             )
             write_parquet_to_s3(gold_df, bucket, out_key, log_write=False)
 
-            metadata_key = (
-                f"{gold_prefix.strip('/')}/{output_role}/year={year}/preprocessing_metadata.json"
+            metadata_key = gold_feature_key(
+                gold_prefix, ARCHETYPES, output_role, year, "preprocessing_metadata.json"
             )
             _write_metadata_json(bucket, metadata_key, artifacts)
 

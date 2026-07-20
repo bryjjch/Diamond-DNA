@@ -115,7 +115,7 @@ def test_build_cluster_labels_writes_sidecar(monkeypatch):
         year=2024,
         feature_cols=["feat_a", "feat_b"],
         bucket="b",
-        key="gold/statcast/batter/year=2024/cluster_labels.json",
+        key="gold/predictions/archetypes/batter/year=2024/cluster_labels.json",
     )
     assert payload["role"] == "batter"
     assert payload["year"] == 2024

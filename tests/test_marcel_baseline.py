@@ -288,7 +288,7 @@ def test_build_marcel_baseline_writes_projections_and_metrics(monkeypatch):
 
     result = build_marcel_baseline(
         bucket="bucket",
-        gold_prefix="gold/statcast",
+        gold_prefix="gold/features",
         predictions_prefix="gold/predictions",
         models_prefix="models",
         start_year=2025,

@@ -23,7 +23,7 @@ from sklearn.preprocessing import RobustScaler
 
 from ...data_pipeline.gold.gold_archetype_preprocessing import ID_COLUMNS
 from ...common.runtime_helpers import current_utc_year, event_or_env_int, event_or_env_str
-from ...common.lake_keys import gold_feature_key, model_key, prediction_key
+from ...common.lake_keys import ARCHETYPES, gold_feature_key, model_key, prediction_key
 from ...common.s3_helpers import get_s3_client, read_parquet_from_s3, write_parquet_to_s3
 from ...common.settings import PipelineSettings
 
@@ -558,7 +558,7 @@ def build_gold_archetype_clustering(
         for year in range(start_year, end_year + 1):
             # Read the gold player-year output.
             in_key = gold_feature_key(
-                gold_prefix, role, year, "player_year_features_preprocessed.parquet"
+                gold_prefix, ARCHETYPES, role, year, "player_year_features_preprocessed.parquet"
             )
             df = read_parquet_from_s3(bucket, in_key, missing_key_log="none")
             if df is None or df.empty:

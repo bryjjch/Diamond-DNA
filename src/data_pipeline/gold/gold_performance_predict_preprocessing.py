@@ -21,6 +21,7 @@ Inputs are the silver standard stat-line tables
 silver Statcast feature tables
 (``{silver_prefix}/{role}/year=Y/player_year_features.parquet``). Outputs land at
 ``{gold_prefix}/performance_prediction/{role}/year=Y/training_matrix.parquet``
+(``gold_prefix`` defaults to ``gold/features``)
 with a metadata JSON alongside.
 
 Missing values are left as NaN (with explicit ``lag{k}_available`` /
@@ -41,6 +42,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from ...common.lake_keys import PERFORMANCE_PREDICTION, gold_feature_key
 from ...common.runtime_helpers import current_utc_year, event_or_env_int, event_or_env_str
 from ...common.s3_helpers import get_s3_client, read_parquet_from_s3, write_parquet_to_s3
 from ...common.settings import PipelineSettings
@@ -536,14 +538,16 @@ def build_performance_training_matrices(
                 )
                 continue
 
-            out_key = (
-                f"{gold_prefix.strip('/')}/performance_prediction/{role}/year={year}"
-                "/training_matrix.parquet"
+            out_key = gold_feature_key(
+                gold_prefix, PERFORMANCE_PREDICTION, role, year, "training_matrix.parquet"
             )
             write_parquet_to_s3(matrix, bucket, out_key, log_write=False)
-            metadata_key = (
-                f"{gold_prefix.strip('/')}/performance_prediction/{role}/year={year}"
-                "/training_matrix_metadata.json"
+            metadata_key = gold_feature_key(
+                gold_prefix,
+                PERFORMANCE_PREDICTION,
+                role,
+                year,
+                "training_matrix_metadata.json",
             )
             _write_metadata_json(bucket, metadata_key, artifacts)
 

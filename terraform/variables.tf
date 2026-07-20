@@ -35,10 +35,10 @@ variable "statcast_silver_s3_prefix" {
   default     = "silver"
 }
 
-variable "statcast_gold_s3_prefix" {
-  description = "S3 prefix for gold ML-ready Statcast datasets (e.g. gold/statcast)"
+variable "gold_s3_prefix" {
+  description = "S3 prefix for gold model-ready feature datasets (e.g. gold/features)"
   type        = string
-  default     = "gold/statcast"
+  default     = "gold/features"
 }
 
 # EventBridge schedules

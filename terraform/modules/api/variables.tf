@@ -14,9 +14,9 @@ variable "data_lake_bucket_arn" {
 }
 
 variable "gold_s3_prefix" {
-  description = "S3 prefix for gold ML-ready Statcast tables (read by the API Lambda)"
+  description = "S3 prefix for gold model-ready feature datasets (read by the API Lambda)"
   type        = string
-  default     = "gold/statcast"
+  default     = "gold/features"
 }
 
 variable "webapp_year" {

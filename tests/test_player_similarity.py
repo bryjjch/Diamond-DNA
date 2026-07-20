@@ -132,7 +132,7 @@ def test_build_gold_player_similarity_missing_model_records_error(monkeypatch):
 
     result = build_gold_player_similarity(
         bucket="test-bucket",
-        gold_prefix="gold/statcast",
+        gold_prefix="gold/features",
         predictions_prefix="gold/predictions",
         models_prefix="models",
         start_year=2025,
@@ -177,7 +177,7 @@ def test_build_gold_player_similarity_writes_artifacts(monkeypatch):
 
     result = build_gold_player_similarity(
         bucket="test-bucket",
-        gold_prefix="gold/statcast",
+        gold_prefix="gold/features",
         predictions_prefix="gold/predictions",
         models_prefix="models",
         start_year=2025,

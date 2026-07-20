@@ -164,7 +164,7 @@ def test_build_silver_to_gold_preprocessing_writes_gold_and_metadata(monkeypatch
     result = build_silver_to_gold_preprocessing(
         bucket="bucket",
         silver_prefix="silver",
-        gold_prefix="gold/statcast",
+        gold_prefix="gold/features",
         start_year=2025,
         end_year=2025,
         role_filter="pitcher",
@@ -173,6 +173,9 @@ def test_build_silver_to_gold_preprocessing_writes_gold_and_metadata(monkeypatch
     assert result["status"] == "ok"
     assert len(writes) == 1
     out_key, out_df = writes[0]
-    assert "gold/statcast/pitcher/year=2025/player_year_features_preprocessed.parquet" in out_key
+    assert (
+        out_key
+        == "gold/features/archetypes/pitcher/year=2025/player_year_features_preprocessed.parquet"
+    )
     assert "woba_value_mean" not in out_df.columns
     assert any("preprocessing_metadata.json" in k for k in metadata_writes)
