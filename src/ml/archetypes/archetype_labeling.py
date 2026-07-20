@@ -26,7 +26,7 @@ from ...common.s3_helpers import get_s3_client
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite"
 DEFAULT_TOP_N_FEATURES = 12
 DEFAULT_SECRET_ENV_VAR = "GEMINI_API_KEY_SECRET_NAME"
 DEFAULT_API_KEY_ENV_VAR = "GEMINI_API_KEY"
