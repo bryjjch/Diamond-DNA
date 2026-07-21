@@ -9,6 +9,8 @@ __all__ = [
     "build_gold_archetype_clustering",
     "build_gold_player_similarity",
     "build_marcel_baseline",
+    "build_xgboost_projections",
+    "compare_model_metrics",
     "compute_cluster_profiles",
     "fit_archetype_clustering",
     "generate_cluster_labels",
@@ -16,6 +18,8 @@ __all__ = [
     "numeric_feature_columns",
     "PlayerSimilarityConfig",
     "prepare_dataframe_for_archetype_clustering",
+    "summarize_comparison",
+    "XGBoostProjectionConfig",
 ]
 
 _ARCHETYPE_EXPORTS = frozenset(
@@ -37,6 +41,8 @@ _LABELING_EXPORTS = frozenset(
 )
 _SIMILARITY_EXPORTS = frozenset({"build_gold_player_similarity", "PlayerSimilarityConfig"})
 _BASELINE_EXPORTS = frozenset({"build_marcel_baseline", "MarcelConfig"})
+_XGBOOST_EXPORTS = frozenset({"build_xgboost_projections", "XGBoostProjectionConfig"})
+_EVALUATION_EXPORTS = frozenset({"compare_model_metrics", "summarize_comparison"})
 
 
 def __getattr__(name: str):
@@ -56,4 +62,12 @@ def __getattr__(name: str):
         from .baselines import marcel_baseline as _mb
 
         return getattr(_mb, name)
+    if name in _XGBOOST_EXPORTS:
+        from .boosted_trees import xgboost_projection as _xp
+
+        return getattr(_xp, name)
+    if name in _EVALUATION_EXPORTS:
+        from .evaluation import compare_projections as _cp
+
+        return getattr(_cp, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
