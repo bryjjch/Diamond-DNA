@@ -41,6 +41,18 @@ variable "gold_s3_prefix" {
   default     = "gold/features"
 }
 
+variable "predictions_s3_prefix" {
+  description = "S3 prefix for model inference outputs served by the API (e.g. gold/predictions)"
+  type        = string
+  default     = "gold/predictions"
+}
+
+variable "models_s3_prefix" {
+  description = "S3 prefix for fitted estimators and metrics sidecars (e.g. models)"
+  type        = string
+  default     = "models"
+}
+
 # EventBridge schedules
 variable "statcast_ingestion_schedule_expression" {
   description = "EventBridge schedule for bronze Statcast pitch ingestion (e.g. cron(0 6 * * ? *) for 6 AM UTC daily)"

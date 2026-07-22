@@ -4,6 +4,7 @@ import json
 import pytest
 
 from src.ml.evaluation.compare_projections import (
+    build_comparison_rows,
     compare_model_metrics,
     load_model_metrics,
     summarize_comparison,
@@ -74,6 +75,17 @@ def patched_s3(monkeypatch, s3_objects):
         "src.ml.evaluation.compare_projections.get_s3_client", lambda: client
     )
     return client
+
+
+def test_build_comparison_rows_skips_stats_missing_from_either_block():
+    base = _metrics_payload("batter", 2023, {"obp": (0.020, 0.030, 0.001), "hr": (5.0, 7.0, -0.5)})
+    cand = _metrics_payload("batter", 2023, {"obp": (0.016, 0.024, 0.002)})
+    rows = build_comparison_rows(base["metrics"], cand["metrics"], role="batter", year=2023)
+    assert [r["stat"] for r in rows] == ["obp"]
+    row = rows[0]
+    assert row["mae_pct_improvement"] == pytest.approx(20.0)
+    assert row["candidate_wins_mae"] is True
+    assert row["n_baseline"] == 100 and row["n_candidate"] == 100
 
 
 def test_load_model_metrics_returns_payload_or_none(patched_s3):
