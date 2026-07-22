@@ -67,6 +67,8 @@ module "api" {
   data_lake_bucket_name = module.s3.data_lake_bucket_name
   data_lake_bucket_arn  = module.s3.data_lake_bucket_arn
   gold_s3_prefix        = var.gold_s3_prefix
+  predictions_s3_prefix = var.predictions_s3_prefix
+  models_s3_prefix      = var.models_s3_prefix
 
   webapp_year        = var.api_webapp_year
   memory_size        = var.api_memory_size

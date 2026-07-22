@@ -54,6 +54,51 @@ def _pct_improvement(baseline: float, candidate: float) -> Optional[float]:
     return (baseline - candidate) / baseline * 100.0
 
 
+def build_comparison_rows(
+    base_metrics: Dict[str, Any],
+    cand_metrics: Dict[str, Any],
+    *,
+    role: str,
+    year: int,
+) -> List[Dict[str, Any]]:
+    """Per-stat head-to-head rows from two ``metrics`` blocks for one role-year.
+
+    Stats absent from either block are skipped, so every row is a true
+    head-to-head on the same season's actuals.
+    """
+    rows: List[Dict[str, Any]] = []
+    for stat in ROLE_ALL_TARGETS[role]:
+        b = base_metrics.get(stat)
+        c = cand_metrics.get(stat)
+        if not b or not c:
+            continue
+        rows.append(
+            {
+                "role": role,
+                "year": year,
+                "stat": stat,
+                "n_baseline": int(b["n"]),
+                "n_candidate": int(c["n"]),
+                "mae_baseline": float(b["mae"]),
+                "mae_candidate": float(c["mae"]),
+                "mae_delta": float(c["mae"]) - float(b["mae"]),
+                "mae_pct_improvement": _pct_improvement(
+                    float(b["mae"]), float(c["mae"])
+                ),
+                "rmse_baseline": float(b["rmse"]),
+                "rmse_candidate": float(c["rmse"]),
+                "rmse_delta": float(c["rmse"]) - float(b["rmse"]),
+                "rmse_pct_improvement": _pct_improvement(
+                    float(b["rmse"]), float(c["rmse"])
+                ),
+                "bias_baseline": float(b["bias"]),
+                "bias_candidate": float(c["bias"]),
+                "candidate_wins_mae": float(c["mae"]) < float(b["mae"]),
+            }
+        )
+    return rows
+
+
 def compare_model_metrics(
     *,
     bucket: str,
@@ -85,37 +130,14 @@ def compare_model_metrics(
             )
             if base is None or cand is None:
                 continue
-            base_metrics = base.get("metrics", {})
-            cand_metrics = cand.get("metrics", {})
-            for stat in ROLE_ALL_TARGETS[role]:
-                b = base_metrics.get(stat)
-                c = cand_metrics.get(stat)
-                if not b or not c:
-                    continue
-                rows.append(
-                    {
-                        "role": role,
-                        "year": year,
-                        "stat": stat,
-                        "n_baseline": int(b["n"]),
-                        "n_candidate": int(c["n"]),
-                        "mae_baseline": float(b["mae"]),
-                        "mae_candidate": float(c["mae"]),
-                        "mae_delta": float(c["mae"]) - float(b["mae"]),
-                        "mae_pct_improvement": _pct_improvement(
-                            float(b["mae"]), float(c["mae"])
-                        ),
-                        "rmse_baseline": float(b["rmse"]),
-                        "rmse_candidate": float(c["rmse"]),
-                        "rmse_delta": float(c["rmse"]) - float(b["rmse"]),
-                        "rmse_pct_improvement": _pct_improvement(
-                            float(b["rmse"]), float(c["rmse"])
-                        ),
-                        "bias_baseline": float(b["bias"]),
-                        "bias_candidate": float(c["bias"]),
-                        "candidate_wins_mae": float(c["mae"]) < float(b["mae"]),
-                    }
+            rows.extend(
+                build_comparison_rows(
+                    base.get("metrics", {}),
+                    cand.get("metrics", {}),
+                    role=role,
+                    year=year,
                 )
+            )
 
     return pd.DataFrame(rows)
 

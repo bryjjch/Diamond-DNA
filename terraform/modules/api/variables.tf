@@ -19,6 +19,18 @@ variable "gold_s3_prefix" {
   default     = "gold/features"
 }
 
+variable "predictions_s3_prefix" {
+  description = "S3 prefix for model inference outputs (projections, archetypes, neighbors) read by the API Lambda"
+  type        = string
+  default     = "gold/predictions"
+}
+
+variable "models_s3_prefix" {
+  description = "S3 prefix for fitted estimators and their metrics sidecars (metrics.json read by the API Lambda)"
+  type        = string
+  default     = "models"
+}
+
 variable "webapp_year" {
   description = "Season year served by the API; empty string defers to the runtime default (UTC year - 1)"
   type        = string

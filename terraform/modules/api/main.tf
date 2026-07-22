@@ -36,7 +36,8 @@ resource "aws_iam_role_policy_attachment" "api_lambda_basic" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-# Read-only access to the gold parquet tables this API serves
+# Read-only access to the lake prefixes this API serves: gold features
+# (training matrix), prediction outputs, and model metrics sidecars
 resource "aws_iam_role_policy" "api_s3_read" {
   name = "${var.name_prefix}-api-s3-read"
   role = aws_iam_role.api.id
@@ -49,7 +50,11 @@ resource "aws_iam_role_policy" "api_s3_read" {
         Action = [
           "s3:GetObject"
         ]
-        Resource = "${var.data_lake_bucket_arn}/${var.gold_s3_prefix}/*"
+        Resource = [
+          "${var.data_lake_bucket_arn}/${var.gold_s3_prefix}/*",
+          "${var.data_lake_bucket_arn}/${var.predictions_s3_prefix}/*",
+          "${var.data_lake_bucket_arn}/${var.models_s3_prefix}/*",
+        ]
       }
     ]
   })
@@ -78,8 +83,10 @@ resource "aws_lambda_function" "api" {
   environment {
     variables = merge(
       {
-        S3_BUCKET   = var.data_lake_bucket_name
-        GOLD_PREFIX = var.gold_s3_prefix
+        S3_BUCKET          = var.data_lake_bucket_name
+        GOLD_PREFIX        = var.gold_s3_prefix
+        PREDICTIONS_PREFIX = var.predictions_s3_prefix
+        MODELS_PREFIX      = var.models_s3_prefix
       },
       var.webapp_year == "" ? {} : { WEBAPP_YEAR = var.webapp_year }
     )
