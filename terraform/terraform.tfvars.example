@@ -3,29 +3,24 @@
 # =============================================================================
 # Copy this file to terraform.tfvars and set values. S3 bucket names must be
 # globally unique across all AWS accounts.
-#
-# NOTE: the bucket name and name_prefix below are the legacy Diamond-DNA
-# values still used by the existing deployment. Changing them in a live
-# workspace destroys and recreates every named resource (and buckets cannot
-# be renamed at all) — keep them until the projections infra rebuild.
 # =============================================================================
 
 # -----------------------------------------------------------------------------
 # Required (no defaults)
 # -----------------------------------------------------------------------------
-data_lake_bucket_name       = "diamond-dna-data-lake"   # Medallion data lives under bronze/silver/gold prefixes
+data_lake_bucket_name       = "xwar-engine-data-lake"   # Medallion data lives under bronze/silver/gold prefixes
 
 # -----------------------------------------------------------------------------
 # General
 # -----------------------------------------------------------------------------
 region      = "us-east-1"
 environment = "dev"
-name_prefix = "diamonddna"
+name_prefix = "xwar-engine"
 
 # Optional: extra tags applied to all resources
 tags = {
   # Owner = "data-team"
-  # CostCenter = "diamond-dna"
+  # CostCenter = "xwar-engine"
 }
 
 # -----------------------------------------------------------------------------
@@ -42,9 +37,9 @@ statcast_ingestion_image_tag             = "latest"
 # -----------------------------------------------------------------------------
 statcast_silver_s3_prefix                = "silver"
 gold_s3_prefix                           = "gold/features"
-statcast_by_player_schedule_expression   = "cron(15 6 * * ? *)"  # 6:15 AM UTC daily
-statcast_by_player_memory_size           = 1024
-statcast_by_player_timeout               = 900
-statcast_by_player_image_tag             = "latest"
+statcast_silver_schedule_expression      = "cron(15 6 * * ? *)"  # 6:15 AM UTC daily
+statcast_silver_memory_size              = 1024
+statcast_silver_timeout                  = 900
+statcast_silver_image_tag                = "latest"
 
 log_retention_days = 14

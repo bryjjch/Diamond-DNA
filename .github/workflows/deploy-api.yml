@@ -6,8 +6,8 @@
 #   vars.AWS_REGION              e.g. us-east-1
 #   vars.AWS_ACCOUNT_ID          12-digit AWS account ID
 #   vars.AWS_DEPLOY_ROLE_ARN     IAM role assumed via OIDC (see terraform/modules/cicd)
-#   vars.ECR_REPOSITORY          ECR repo name (defaults to diamond-dna-api)
-#   vars.LAMBDA_FUNCTION_NAME    Lambda function name (defaults to diamond-dna-api)
+#   vars.ECR_REPOSITORY          ECR repo name (defaults to xwar-engine-api)
+#   vars.LAMBDA_FUNCTION_NAME    Lambda function name (defaults to xwar-engine-api)
 name: Deploy API Lambda
 
 on:
@@ -36,8 +36,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
-      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'diamond-dna-api' }}
-      LAMBDA_FUNCTION_NAME: ${{ vars.LAMBDA_FUNCTION_NAME || 'diamond-dna-api' }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'xwar-engine-api' }}
+      LAMBDA_FUNCTION_NAME: ${{ vars.LAMBDA_FUNCTION_NAME || 'xwar-engine-api' }}
     steps:
       - uses: actions/checkout@v4
 

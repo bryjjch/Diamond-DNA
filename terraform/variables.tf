@@ -13,7 +13,7 @@ variable "environment" {
 variable "name_prefix" {
   description = "Prefix for resource names"
   type        = string
-  default     = "diamond-dna"
+  default     = "xwar-engine"
 }
 
 # S3 Configuration
