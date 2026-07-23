@@ -1,24 +1,19 @@
 # xWAR Engine
 
 MLB player performance projections, served as a cloud-native web app.
-Formerly **Diamond-DNA**, a player archetype clustering project — the
-archetype (GMM) and similarity (KNN) models live on as the comparables
-engine behind the projections.
+The project began as player archetype clustering — the archetype (GMM)
+and similarity (KNN) models live on as the comparables engine behind the
+projections.
 
 ## Revamping
 
-This project is transitioning from archetype clustering (Diamond-DNA) to
-player performance projections (xWAR Engine). Many existing features carry
-over. Projections will start with next-season projections; rest-of-season
-projections could come later as a V2. Target stats:
+This project is transitioning from archetype clustering to player
+performance projections. Many existing features carry over. Projections
+will start with next-season projections; rest-of-season projections could
+come later as a V2. Target stats:
 
 Batters: PA, AVG/OBP/SLG, wOBA, HR, SB, K%, BB%
 Pitchers: IP, ERA, FIP, K%, BB%, WHIP
-
-The repo, docs, and frontend are rebranded to xWAR Engine. AWS resources
-(S3 bucket, Lambdas, ECR repos) still carry legacy `diamond-dna` names —
-AWS does not allow renaming, so those will be replaced when the
-architecture is rebuilt for projections.
 
 ## Architecture
 
@@ -30,7 +25,7 @@ architecture is rebuilt for projections.
                       ▼
                 ┌──────────────┐      ┌──────────────────┐
    API Gateway  │ HTTP API v2  │ ──►  │ Lambda           │   (src/api/)
-                └──────────────┘      │ diamond-dna-api  │
+                └──────────────┘      │ xwar-engine-api  │
                                       └────────┬─────────┘
                                                │ s3:GetObject (gold/*)
                                                ▼
@@ -57,14 +52,13 @@ architecture is rebuilt for projections.
 
 ## Data pipeline
 
-Three Lambdas run daily on EventBridge (legacy `diamond-dna-*` resource
-names, see [Revamping](#revamping)):
+Three Lambdas run daily on EventBridge:
 
 | Time UTC | Lambda                   | Reads             | Writes              |
 | -------- | ------------------------ | ----------------- | ------------------- |
-| 06:00    | `diamond-dna-statcast-ingestion` | pybaseball  | `bronze/statcast/`  |
-| 06:15    | `diamond-dna-silver-feature-build` | bronze | `silver/{role}/`    |
-| 06:30    | `diamond-dna-gold-preprocessing`   | silver | `gold/features/archetypes/{role}/` |
+| 06:00    | `xwar-engine-statcast-ingestion` | pybaseball  | `bronze/statcast/`  |
+| 06:15    | `xwar-engine-silver-feature-build` | bronze | `silver/{role}/`    |
+| 06:30    | `xwar-engine-gold-preprocessing`   | silver | `gold/features/archetypes/{role}/` |
 
 ML stages (archetype clustering, KNN similarity, Marcel baseline) are run
 manually via the CLIs under `src/ml/`. They read `gold/features/` and split

@@ -29,9 +29,7 @@ class PipelineSettings:
     @classmethod
     def from_environ(cls, environ: Optional[Mapping[str, str]] = None) -> PipelineSettings:
         e = dict(environ or os.environ)
-        # Legacy bucket name from the Diamond-DNA era; S3 buckets cannot be
-        # renamed, so this stays until the lake is migrated to a new bucket.
-        bucket = e.get("S3_BUCKET", "diamond-dna-data-lake")
+        bucket = e.get("S3_BUCKET", "xwar-engine-data-lake")
         raw = _strip_prefix(e.get("S3_PREFIX") or e.get("RAW_PREFIX") or "bronze/statcast")
         return cls(
             s3_bucket=bucket,
