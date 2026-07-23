@@ -167,37 +167,6 @@ variable "api_cors_allow_origins" {
   default     = ["*"]
 }
 
-# CI/CD: GitHub Actions OIDC role for deploying the API Lambda
-variable "enable_cicd" {
-  description = "Provision the GitHub Actions OIDC role used by .github/workflows/deploy-api.yml"
-  type        = bool
-  default     = false
-}
-
-variable "github_owner" {
-  description = "GitHub owner/org that owns this repo (required when enable_cicd = true)"
-  type        = string
-  default     = ""
-}
-
-variable "github_repo" {
-  description = "GitHub repository name (required when enable_cicd = true)"
-  type        = string
-  default     = ""
-}
-
-variable "github_ref_pattern" {
-  description = "Git ref allowed to assume the deploy role (default: only the main branch)"
-  type        = string
-  default     = "refs/heads/main"
-}
-
-variable "create_github_oidc_provider" {
-  description = "Create the GitHub OIDC provider in IAM. Set to false if your account already has one."
-  type        = bool
-  default     = true
-}
-
 variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)
