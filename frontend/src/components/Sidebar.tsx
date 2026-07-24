@@ -9,8 +9,8 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
-  { to: "/", label: "Archetype Clusters", icon: "pi pi-th-large", end: true },
-  { to: "/similar", label: "Similar Players", icon: "pi pi-users", end: false },
+  { to: "/", label: "Projections", icon: "pi pi-chart-line", end: true },
+  { to: "/accuracy", label: "Model Accuracy", icon: "pi pi-check-circle", end: false },
 ];
 
 export function Sidebar() {
@@ -51,8 +51,8 @@ export function Sidebar() {
       </nav>
 
       <div className="border-t border-line px-5 py-4 text-[11px] leading-relaxed text-muted">
-        <p className="m-0 font-medium text-fg">PCA · KNN · K-Means</p>
-        <p className="m-0">Statcast pipeline → daily refresh</p>
+        <p className="m-0 font-medium text-fg">XGBoost · Marcel · GMM archetypes</p>
+        <p className="m-0">Statcast pipeline → gold lake → API</p>
       </div>
     </aside>
   );

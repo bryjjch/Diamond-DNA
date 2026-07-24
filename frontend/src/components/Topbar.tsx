@@ -1,28 +1,34 @@
 import { useLocation } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
 import { Tag } from "primereact/tag";
 import { Skeleton } from "primereact/skeleton";
-import { api } from "@/lib/api";
+import { useMeta } from "@/lib/useMeta";
+import { useSeasonYear } from "@/lib/season";
 
-const TITLES: Record<string, { title: string; subtitle: string }> = {
-  "/": {
-    title: "Archetype Clusters",
-    subtitle: "Player groupings discovered by K-Means over standardized Statcast features.",
-  },
-  "/similar": {
-    title: "Similar Players",
-    subtitle: "Nearest neighbors in PCA space — pick a player to see their closest matches.",
-  },
-};
+function matchTitle(pathname: string): { title: string; subtitle: string } {
+  if (pathname.startsWith("/player/")) {
+    return {
+      title: "Player Detail",
+      subtitle: "Projection, season history, archetype fit, and comparables.",
+    };
+  }
+  if (pathname.startsWith("/accuracy")) {
+    return {
+      title: "Model Accuracy",
+      subtitle: "XGBoost projections backtested against the Marcel baseline.",
+    };
+  }
+  return {
+    title: "Projections",
+    subtitle: "Projected and actual leaderboards from the XGBoost and Marcel models.",
+  };
+}
 
 export function Topbar() {
   const { pathname } = useLocation();
-  const page = TITLES[pathname] ?? TITLES["/"];
+  const page = matchTitle(pathname);
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["meta"],
-    queryFn: api.meta,
-  });
+  const { data, isLoading, error } = useMeta();
+  const season = useSeasonYear();
 
   return (
     <header className="sticky top-0 z-10 border-b border-line bg-surface/85 backdrop-blur">
@@ -35,28 +41,30 @@ export function Topbar() {
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          {isLoading && <Skeleton width="6rem" height="1.5rem" borderRadius="6px" />}
-          {data && (
-            <>
-              <Tag
-                value={`Season ${data.year}`}
-                severity="success"
-                rounded
-                icon="pi pi-calendar"
-              />
-              <Tag
-                value={`${data.n_archetype_rows.toLocaleString()} players`}
-                rounded
-                icon="pi pi-database"
-                style={{
-                  background: "var(--color-surface-alt)",
-                  color: "var(--color-muted)",
-                  border: "1px solid var(--color-line)",
-                }}
-              />
-            </>
+          {(isLoading || season.isLoading) && (
+            <Skeleton width="6rem" height="1.5rem" borderRadius="6px" />
           )}
-          {error && (
+          {season.year !== undefined && (
+            <Tag
+              value={`Season ${season.year}`}
+              severity="success"
+              rounded
+              icon="pi pi-calendar"
+            />
+          )}
+          {data && (
+            <Tag
+              value={data.models.join(" · ")}
+              rounded
+              icon="pi pi-sliders-h"
+              style={{
+                background: "var(--color-surface-alt)",
+                color: "var(--color-muted)",
+                border: "1px solid var(--color-line)",
+              }}
+            />
+          )}
+          {error != null && (
             <Tag
               value="meta unavailable"
               severity="danger"
