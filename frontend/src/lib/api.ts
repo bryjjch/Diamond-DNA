@@ -1,11 +1,12 @@
 import type {
-  ClustersResponse,
-  LeaderboardResponse,
+  AccuracyResponse,
+  HealthResponse,
   MetaResponse,
-  NeighborsResponse,
+  Model,
+  PlayerResponse,
+  ProjectionsResponse,
   Role,
   SearchResponse,
-  SoftProfileResponse,
 } from "./types";
 
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
@@ -18,7 +19,10 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, params?: Record<string, string | number>): Promise<T> {
+async function request<T>(
+  path: string,
+  params?: Record<string, string | number | undefined>,
+): Promise<T> {
   const qs = params
     ? "?" +
       Object.entries(params)
@@ -43,12 +47,18 @@ async function request<T>(path: string, params?: Record<string, string | number>
 
 export const api = {
   meta: () => request<MetaResponse>("/api/meta"),
-  clusters: () => request<ClustersResponse>("/api/clusters"),
-  search: (q: string) => request<SearchResponse>("/api/search", { q }),
-  leaderboard: (role: Role, limit = 800) =>
-    request<LeaderboardResponse>("/api/leaderboard", { role, limit }),
-  neighbors: (role: Role, playerId: number) =>
-    request<NeighborsResponse>("/api/neighbors", { role, player_id: playerId }),
-  playerSoftProfile: (role: Role, playerId: number) =>
-    request<SoftProfileResponse>("/api/player_soft_profile", { role, player_id: playerId }),
+  projections: (p: {
+    role: Role;
+    year?: number;
+    model?: Model;
+    sort?: string;
+    order?: "asc" | "desc";
+    limit?: number;
+  }) => request<ProjectionsResponse>("/api/projections", p),
+  player: (p: { player_id: number; year?: number; model?: Model; role?: Role }) =>
+    request<PlayerResponse>("/api/player", p),
+  accuracy: (p?: { role?: "all" | Role; start_year?: number; end_year?: number }) =>
+    request<AccuracyResponse>("/api/accuracy", p),
+  search: (q: string, year?: number) => request<SearchResponse>("/api/search", { q, year }),
+  health: () => request<HealthResponse>("/api/health"),
 };

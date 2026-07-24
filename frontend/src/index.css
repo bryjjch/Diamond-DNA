@@ -178,3 +178,57 @@ body,
 .p-message {
   border-radius: 10px;
 }
+
+/* DataTable — compact dashboard tables */
+.p-datatable .p-datatable-thead > tr > th {
+  background: var(--color-surface-alt);
+  border-color: var(--color-line);
+  color: var(--color-muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  padding: 0.5rem 0.75rem;
+}
+.p-datatable .p-datatable-tbody > tr > td {
+  border-color: var(--color-line);
+  font-size: 0.875rem;
+  padding: 0.45rem 0.75rem;
+}
+.p-datatable .p-datatable-tbody > tr {
+  background: var(--color-surface);
+}
+.p-datatable.p-datatable-striped .p-datatable-tbody > tr:nth-child(even) {
+  background: var(--color-surface-alt);
+}
+.p-datatable .p-sortable-column.p-highlight {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-hover);
+}
+.p-datatable .p-sortable-column.p-highlight .p-sortable-column-icon {
+  color: var(--color-accent-hover);
+}
+.p-paginator {
+  background: transparent;
+  border: 0;
+  padding-top: 0.5rem;
+}
+
+/* TabView — align with card styling */
+.p-tabview .p-tabview-nav {
+  background: transparent;
+  border-color: var(--color-line);
+}
+.p-tabview .p-tabview-nav li .p-tabview-nav-link {
+  background: transparent;
+  color: var(--color-muted);
+  font-weight: 500;
+}
+.p-tabview .p-tabview-nav li.p-highlight .p-tabview-nav-link {
+  color: var(--color-accent-hover);
+  border-color: var(--color-accent);
+}
+.p-tabview .p-tabview-panels {
+  background: transparent;
+  padding: 1.25rem 0 0;
+}

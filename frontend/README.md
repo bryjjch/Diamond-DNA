@@ -1,21 +1,42 @@
 # xWAR Engine Frontend
 
-React + TypeScript SPA for the xWAR Engine cluster browser and KNN similarity
-viewer. Built with Vite, Tailwind v4, TanStack Query, and React Router.
+React + TypeScript SPA for the xWAR Engine projection dashboard. Built with
+Vite, Tailwind v4, PrimeReact, TanStack Query, and React Router.
+
+Pages:
+
+- **Projections** (`/`) — projected vs. season-to-date-actual leaderboards for
+  the current season, with batter/pitcher and XGBoost/Marcel toggles, plus
+  player search.
+- **Player Detail** (`/player/:playerId`) — projection vs. actuals, season
+  history (with Statcast), GMM archetype fit, and nearest-neighbor comparables.
+- **Model Accuracy** (`/accuracy`) — XGBoost vs. Marcel backtest summary and
+  per-year detail.
 
 ## Local development
 
-The dev server proxies `/api/*` to the deployed API Gateway, so no local
-backend is required:
+The dev server proxies `/api/*` to the API Gateway named by
+`VITE_DEV_API_PROXY`, so no local backend is required. The URL is not
+hardcoded — put it in `frontend/.env.local` (gitignored) or the shell:
 
 ```powershell
 cd frontend
-npm install        # first time only
-npm run dev        # http://127.0.0.1:5173
+npm install                                # first time only
+echo "VITE_DEV_API_PROXY=https://<api-id>.execute-api.us-east-1.amazonaws.com" > .env.local
+npm run dev                                # http://127.0.0.1:5173
 ```
 
-The proxy target is configured in [vite.config.ts](vite.config.ts) and can be
-overridden via `VITE_DEV_API_PROXY`.
+Get the URL from `terraform output api_endpoint` once the infra rebuild
+(REBUILD.md) is applied. Without `VITE_DEV_API_PROXY` the dev server starts
+with no proxy and every `/api/*` request fails.
+
+### Which season the site shows
+
+`/api/meta`'s `default_year` is derived from the Lambda's calendar (current year
+− 1), so it lags the live season. `src/lib/season.ts` instead probes the newest
+plausible season, steps back a year if it has no artifacts, and falls back to
+`default_year` — so the site follows the data without a redeploy. Set
+`VITE_SEASON_YEAR` (or the API's `WEBAPP_YEAR`) to pin a specific season.
 
 ## Production (Vercel)
 
@@ -41,9 +62,10 @@ overridden via `VITE_DEV_API_PROXY`.
 
 ```
 src/
-  components/    # AppShell, Sidebar, Topbar, SearchInput, RoleSelect, ErrorBanner
-  pages/         # ClusterBrowser, SimilarPlayers
-  lib/           # api client, types, queryClient, utils
+  components/    # AppShell, Sidebar, Topbar, LeaderboardTable, PlayerSearch,
+                 # ArchetypeProbs, RoleSelect, ModelSelect, SearchInput, ErrorBanner
+  pages/         # Home, PlayerDetail, Accuracy
+  lib/           # api client, types, stats formatting, theme, queryClient, utils
   App.tsx        # routes
   main.tsx       # mount + providers (PrimeReact, React Query, Router)
 ```
