@@ -55,22 +55,10 @@ variable "gold_s3_prefix" {
   default     = "gold/features"
 }
 
-variable "schedule_expression" {
-  description = "EventBridge schedule for bronze Statcast pitch ingestion (e.g. cron(0 6 * * ? *) for 6 AM UTC daily)"
+variable "pipeline_schedule_expression" {
+  description = "EventBridge schedule for the daily pipeline state machine (bronze -> silver -> gold); 22:00 UTC so the prior day's data has landed upstream"
   type        = string
-  default     = "cron(0 6 * * ? *)"
-}
-
-variable "silver_schedule_expression" {
-  description = "EventBridge schedule for silver feature build (e.g. cron(15 6 * * ? *) for 6:15 AM UTC daily)"
-  type        = string
-  default     = "cron(15 6 * * ? *)"
-}
-
-variable "gold_schedule_expression" {
-  description = "EventBridge schedule for gold preprocessing (e.g. cron(30 6 * * ? *) for 6:30 AM UTC daily)"
-  type        = string
-  default     = "cron(30 6 * * ? *)"
+  default     = "cron(0 22 * * ? *)"
 }
 
 variable "memory_size" {
@@ -80,7 +68,7 @@ variable "memory_size" {
 }
 
 variable "timeout" {
-  description = "Lambda timeout in seconds for bronze ingestion (statcast + running + defence run serially)"
+  description = "Lambda timeout in seconds for bronze ingestion (statcast + running + defence + bio + standard run serially)"
   type        = number
   default     = 900
 }
@@ -116,7 +104,7 @@ variable "log_retention_days" {
 }
 
 variable "image_tag" {
-  description = "ECR image tag for the bronze Statcast pitch ingestion Lambda (e.g. latest)"
+  description = "ECR image tag for the bronze ingestion Lambda (e.g. latest)"
   type        = string
   default     = "latest"
 }

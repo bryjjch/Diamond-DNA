@@ -36,8 +36,8 @@ Pitchers: IP, ERA, FIP, K%, BB%, WHIP
                                       └────────▲─────────┘
                                                │
                 ┌──────────────────────────────┴───────────────────────┐
-                │ Pipeline Lambdas (EventBridge, daily)                │
-                │   bronze → silver → gold                             │
+                │ Pipeline Step Function (EventBridge, daily 22:00 UTC)│
+                │   bronze → silver → gold Lambda chain                │
                 │   src/data_pipeline/{bronze,silver,gold}, docker/    │
                 └──────────────────────────────────────────────────────┘
 ```
@@ -52,13 +52,17 @@ Pitchers: IP, ERA, FIP, K%, BB%, WHIP
 
 ## Data pipeline
 
-Three Lambdas run daily on EventBridge:
+One EventBridge rule (22:00 UTC daily, after the upstream APIs have published the
+prior day's data) starts the `xwar-engine-data-pipeline` Step Functions state
+machine, which runs the three stage Lambdas as a dependency chain — each stage
+waits for the previous one and the chain stops on a full failure (partial results
+proceed):
 
-| Time UTC | Lambda                   | Reads             | Writes              |
-| -------- | ------------------------ | ----------------- | ------------------- |
-| 06:00    | `xwar-engine-statcast-ingestion` | pybaseball  | `bronze/statcast/`  |
-| 06:15    | `xwar-engine-silver-feature-build` | bronze | `silver/{role}/`    |
-| 06:30    | `xwar-engine-gold-preprocessing`   | silver | `gold/features/archetypes/{role}/` |
+| Order | Lambda | Orchestrates | Reads | Writes |
+| ----- | ------ | ------------ | ----- | ------ |
+| 1 | `xwar-engine-bronze-ingestion` | statcast, running, defence, bio, standard (`bronze_build`) | pybaseball / MLB APIs | `bronze/*` |
+| 2 | `xwar-engine-silver-feature-build` | archetype features + standard stats (`silver_build`) | bronze | `silver/{role}/` |
+| 3 | `xwar-engine-gold-preprocessing` | archetype preprocessing + performance matrices (`gold_build`) | silver | `gold/features/{archetypes,performance_prediction}/{role}/` |
 
 ML stages (archetype clustering, KNN similarity, Marcel baseline) are run
 manually via the CLIs under `src/ml/`. They read `gold/features/` and split
@@ -80,10 +84,10 @@ src/
   common/               # shared S3 / settings / runtime helpers
   data_pipeline/        # bronze → silver → gold ETL
     bronze/             # daily Statcast / running / defence / player-bio ingest
-    silver/
+    silver/             # silver_build.py orchestrates both silver steps
       archetype_features/  # bronze → silver archetype feature build
       standard_stats/      # bronze → silver standard stat-line tables
-    gold/               # silver → gold preprocessing
+    gold/               # silver → gold preprocessing (gold_build.py orchestrates)
   ml/
     archetypes/         # archetype clustering, labeling, finetune sweeps
     knn_neighbours/     # KNN similar-players similarity

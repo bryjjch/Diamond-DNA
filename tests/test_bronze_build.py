@@ -8,7 +8,7 @@ import pytest
 
 from src.data_pipeline.bronze import (
     bio_ingestion,
-    bronze_ingestion,
+    bronze_build,
     defence_ingestion,
     standard_stats_ingestion,
     statcast_ingestion,
@@ -59,7 +59,7 @@ def _ingest(**overrides):
         end_date_str="2026-06-19",
     )
     kwargs.update(overrides)
-    return bronze_ingestion.ingest_all_bronze(**kwargs)
+    return bronze_build.ingest_all_bronze(**kwargs)
 
 
 def test_all_ok(patched_sources):

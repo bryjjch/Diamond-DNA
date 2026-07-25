@@ -23,13 +23,13 @@ variable "data_lake_bucket_name" {
 }
 
 # S3 Prefixes
-variable "statcast_ingestion_s3_prefix" {
+variable "bronze_ingestion_s3_prefix" {
   description = "S3 prefix for bronze Statcast pitch data (e.g. bronze/statcast)"
   type        = string
   default     = "bronze/statcast"
 }
 
-variable "statcast_silver_s3_prefix" {
+variable "silver_s3_prefix" {
   description = "S3 prefix for silver player-year feature tables (e.g. silver)"
   type        = string
   default     = "silver"
@@ -53,79 +53,67 @@ variable "models_s3_prefix" {
   default     = "models"
 }
 
-# EventBridge schedules
-variable "statcast_ingestion_schedule_expression" {
-  description = "EventBridge schedule for bronze Statcast pitch ingestion (e.g. cron(0 6 * * ? *) for 6 AM UTC daily)"
+# EventBridge schedule for the pipeline state machine (bronze -> silver -> gold)
+variable "pipeline_schedule_expression" {
+  description = "EventBridge schedule for the daily pipeline state machine (bronze -> silver -> gold); 22:00 UTC so the prior day's data has landed upstream"
   type        = string
-  default     = "cron(0 6 * * ? *)"
-}
-
-variable "statcast_silver_schedule_expression" {
-  description = "EventBridge schedule for silver feature build (e.g. cron(15 6 * * ? *) for 6:15 AM UTC daily)"
-  type        = string
-  default     = "cron(15 6 * * ? *)"
-}
-
-variable "statcast_gold_schedule_expression" {
-  description = "EventBridge schedule for gold preprocessing (e.g. cron(30 6 * * ? *) for 6:30 AM UTC daily)"
-  type        = string
-  default     = "cron(30 6 * * ? *)"
+  default     = "cron(0 22 * * ? *)"
 }
 
 # Lambda memory and timeout: bronze ingestion
-variable "statcast_ingestion_memory_size" {
-  description = "Lambda memory size in MB for bronze Statcast pitch ingestion"
+variable "bronze_ingestion_memory_size" {
+  description = "Lambda memory size in MB for bronze ingestion (all bronze sources)"
   type        = number
   default     = 1024
 }
 
-variable "statcast_ingestion_timeout" {
-  description = "Lambda timeout in seconds for bronze ingestion (statcast + running + defence run serially)"
+variable "bronze_ingestion_timeout" {
+  description = "Lambda timeout in seconds for bronze ingestion (statcast + running + defence + bio + standard run serially)"
   type        = number
   default     = 900
 }
 
-# Lambda memory and timeout: silver feature build
-variable "statcast_silver_memory_size" {
-  description = "Lambda memory size in MB for silver feature build"
+# Lambda memory and timeout: silver build
+variable "silver_memory_size" {
+  description = "Lambda memory size in MB for the silver build (archetype features + standard stats)"
   type        = number
   default     = 1024
 }
 
-variable "statcast_silver_timeout" {
-  description = "Lambda timeout in seconds for silver feature build"
+variable "silver_timeout" {
+  description = "Lambda timeout in seconds for the silver build (both steps run serially)"
   type        = number
   default     = 900
 }
 
-# Lambda memory and timeout: gold preprocessing
-variable "statcast_gold_memory_size" {
-  description = "Lambda memory size in MB for gold preprocessing"
+# Lambda memory and timeout: gold build
+variable "gold_memory_size" {
+  description = "Lambda memory size in MB for the gold build (archetype preprocessing + performance matrices)"
   type        = number
   default     = 1024
 }
 
-variable "statcast_gold_timeout" {
-  description = "Lambda timeout in seconds for gold preprocessing"
+variable "gold_timeout" {
+  description = "Lambda timeout in seconds for the gold build (both steps run serially)"
   type        = number
   default     = 900
 }
 
 # ECR image tags
-variable "statcast_ingestion_image_tag" {
-  description = "ECR image tag for the bronze Statcast pitch ingestion Lambda (e.g. latest)"
+variable "bronze_ingestion_image_tag" {
+  description = "ECR image tag for the bronze ingestion Lambda (e.g. latest)"
   type        = string
   default     = "latest"
 }
 
-variable "statcast_silver_image_tag" {
-  description = "ECR image tag for the silver feature build Lambda (e.g. latest)"
+variable "silver_image_tag" {
+  description = "ECR image tag for the silver build Lambda (e.g. latest)"
   type        = string
   default     = "latest"
 }
 
-variable "statcast_gold_image_tag" {
-  description = "ECR image tag for the gold preprocessing Lambda (e.g. latest)"
+variable "gold_image_tag" {
+  description = "ECR image tag for the gold build Lambda (e.g. latest)"
   type        = string
   default     = "latest"
 }
