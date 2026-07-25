@@ -24,22 +24,26 @@ tags = {
 }
 
 # -----------------------------------------------------------------------------
-# Bronze Statcast pitch ingestion Lambda (daily run; same image used for backfill)
+# Pipeline schedule (one EventBridge rule starts the bronze -> silver -> gold
+# Step Functions state machine; each stage waits on the previous one)
 # -----------------------------------------------------------------------------
-statcast_ingestion_s3_prefix             = "bronze/statcast"
-statcast_ingestion_schedule_expression   = "cron(0 6 * * ? *)"  # 6 AM UTC daily
-statcast_ingestion_memory_size           = 1024
-statcast_ingestion_timeout               = 300
-statcast_ingestion_image_tag             = "latest"
+pipeline_schedule_expression             = "cron(0 22 * * ? *)"  # 10 PM UTC daily — prior day's data has landed upstream
 
 # -----------------------------------------------------------------------------
-# Silver feature Lambda (daily run; bronze Statcast dailies → silver player-year features)
+# Bronze ingestion Lambda (daily run, all bronze sources; same image used for backfill)
 # -----------------------------------------------------------------------------
-statcast_silver_s3_prefix                = "silver"
+bronze_ingestion_s3_prefix               = "bronze/statcast"
+bronze_ingestion_memory_size             = 1024
+bronze_ingestion_timeout                 = 300
+bronze_ingestion_image_tag               = "latest"
+
+# -----------------------------------------------------------------------------
+# Silver build Lambda (daily run; archetype features + standard stat lines)
+# -----------------------------------------------------------------------------
+silver_s3_prefix                         = "silver"
 gold_s3_prefix                           = "gold/features"
-statcast_silver_schedule_expression      = "cron(15 6 * * ? *)"  # 6:15 AM UTC daily
-statcast_silver_memory_size              = 1024
-statcast_silver_timeout                  = 900
-statcast_silver_image_tag                = "latest"
+silver_memory_size                       = 1024
+silver_timeout                           = 900
+silver_image_tag                         = "latest"
 
 log_retention_days = 14
