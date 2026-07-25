@@ -89,7 +89,7 @@ locals {
 
   data_pipeline_definition = {
     Comment        = "xWAR daily data pipeline: bronze ingestion -> silver build -> gold build"
-    TimeoutSeconds = 3600
+    TimeoutSeconds = 295
     StartAt        = "BronzeIngestion"
     States = {
       BronzeIngestion = {
@@ -101,7 +101,7 @@ locals {
         }
         ResultSelector = local.pipeline_stage_result_selector
         ResultPath     = "$.bronze"
-        TimeoutSeconds = 960
+        TimeoutSeconds = 280
         Retry          = local.pipeline_stage_retry
         Catch          = local.pipeline_stage_catch
         Next           = "CheckBronze"
@@ -126,7 +126,7 @@ locals {
         }
         ResultSelector = local.pipeline_stage_result_selector
         ResultPath     = "$.silver"
-        TimeoutSeconds = 960
+        TimeoutSeconds = 280
         Retry          = local.pipeline_stage_retry
         Catch          = local.pipeline_stage_catch
         Next           = "CheckSilver"
@@ -151,7 +151,7 @@ locals {
         }
         ResultSelector = local.pipeline_stage_result_selector
         ResultPath     = "$.gold"
-        TimeoutSeconds = 960
+        TimeoutSeconds = 280
         Retry          = local.pipeline_stage_retry
         Catch          = local.pipeline_stage_catch
         Next           = "CheckGold"
@@ -179,16 +179,63 @@ locals {
   }
 }
 
-# Standard workflow: worst case (3 stages x 900s Lambda timeout + retries) exceeds
-# the Express 5-minute cap, and Standard keeps 90-day execution history for free.
+# EXPRESS trial: worst case (3 stages x 900s Lambda timeout + retries) still exceeds
+# the Express 5-minute cap on paper, but bronze_ingestion has never actually been
+# invoked so its real duration is unmeasured -- silver (~17s) and gold (~2-17s)
+# comfortably fit. Express hard-stops any execution still running at 5 minutes
+# (partial work is lost, nothing resumes), and unlike Standard it keeps no execution
+# history in the console -- CloudWatch Logs below is the only way to inspect a run.
+# Revert to STANDARD (see git history) if bronze doesn't fit under the cap.
+resource "aws_cloudwatch_log_group" "data_pipeline_sfn" {
+  name              = "/aws/vendedlogs/states/${var.name_prefix}-data-pipeline"
+  retention_in_days = var.log_retention_days
+
+  tags = var.tags
+}
+
+resource "aws_iam_role_policy" "data_pipeline_sfn_logs" {
+  name = "${var.name_prefix}-data-pipeline-sfn-logs"
+  role = aws_iam_role.data_pipeline_sfn.id
+
+  # Fixed set of actions AWS requires for Step Functions log delivery to CloudWatch;
+  # unlike lambda:InvokeFunction above these can't be scoped to a single resource ARN.
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogDelivery",
+          "logs:GetLogDelivery",
+          "logs:UpdateLogDelivery",
+          "logs:DeleteLogDelivery",
+          "logs:ListLogDeliveries",
+          "logs:PutResourcePolicy",
+          "logs:DescribeResourcePolicies",
+          "logs:DescribeLogGroups",
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
 resource "aws_sfn_state_machine" "data_pipeline" {
   name     = "${var.name_prefix}-data-pipeline"
   role_arn = aws_iam_role.data_pipeline_sfn.arn
-  type     = "STANDARD"
+  type     = "EXPRESS"
 
   definition = jsonencode(local.data_pipeline_definition)
 
+  logging_configuration {
+    log_destination        = "${aws_cloudwatch_log_group.data_pipeline_sfn.arn}:*"
+    include_execution_data = true
+    level                  = "ALL"
+  }
+
   tags = var.tags
+
+  depends_on = [aws_iam_role_policy.data_pipeline_sfn_logs]
 }
 
 # IAM role EventBridge assumes to start pipeline executions
