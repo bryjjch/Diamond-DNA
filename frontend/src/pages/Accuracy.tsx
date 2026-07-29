@@ -24,9 +24,9 @@ const ROLE_OPTIONS = [
 // Bar fills use the brighter hues; numeric text uses darker steps of the same
 // hues so the values stay legible on the light surface.
 const POSITIVE = "var(--color-accent)";
-const NEGATIVE = "#dc2626";
-const POSITIVE_TEXT = "#047857";
-const NEGATIVE_TEXT = "#b91c1c";
+const NEGATIVE = "var(--color-brand-red)";
+const POSITIVE_TEXT = "var(--color-accent-hover)";
+const NEGATIVE_TEXT = "var(--color-brand-red-text)";
 
 export function Accuracy() {
   const [params, setParams] = useSearchParams();

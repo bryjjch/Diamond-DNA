@@ -20,6 +20,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
+import unicodedata
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -621,17 +623,35 @@ def player_detail_payload(
     }
 
 
+_NON_WORD = re.compile(r"[^a-z0-9]+")
+
+
+def name_tokens(text: Any) -> List[str]:
+    """Lowercased, accent-folded word tokens: ``Acuña Jr., Ronald`` → ``[acuna, jr, ronald]``."""
+    if text is None or (isinstance(text, float) and pd.isna(text)):
+        return []
+    folded = unicodedata.normalize("NFKD", str(text)).encode("ascii", "ignore").decode()
+    return [t for t in _NON_WORD.split(folded.lower()) if t]
+
+
 def search_players(
     index: pd.DataFrame,
     q: str,
     labels: ClusterLabelLookup,
     limit: int = 50,
 ) -> List[Dict[str, Any]]:
-    """Name-substring matches over the per-year name index, with cluster info when known."""
-    qn = q.strip().lower()
-    if not qn or index.empty:
+    """Name matches over the per-year name index, with cluster info when known.
+
+    Matching is token-wise rather than a raw substring scan: every term in the
+    query must be a substring of some token of the player's name, in any order.
+    Names are stored ``Last, First``, so this is what lets a natural-order query
+    ("Ernie Clement") find the same player as "Clement, Ernie" or "clement".
+    """
+    terms = name_tokens(q)
+    if not terms or index.empty:
         return []
-    mask = index["player_name"].str.lower().str.contains(qn, na=False)
+    tokens = index["player_name"].map(name_tokens)
+    mask = tokens.map(lambda toks: all(any(t in tok for tok in toks) for t in terms))
     sub = index.loc[mask].sort_values("player_name").head(limit)
     rows: List[Dict[str, Any]] = []
     for _, rw in sub.iterrows():

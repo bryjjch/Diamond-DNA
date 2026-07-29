@@ -1,9 +1,9 @@
 import type { ArchetypeRole, Role } from "./types";
 
-/** Accent tone per role — emerald for batters, sky for pitchers. */
+/** Accent tone per role — club royal for batters, the lighter blue for pitchers. */
 export const ROLE_TONE: Record<Role, string> = {
   batter: "var(--color-accent)",
-  pitcher: "#0ea5e9",
+  pitcher: "var(--color-sky)",
 };
 
 export const ROLE_TAG_SEVERITY: Record<ArchetypeRole, "success" | "info" | "warning"> = {
