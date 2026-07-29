@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Tag } from "primereact/tag";
 import { ProgressSpinner } from "primereact/progressspinner";
 import { api } from "@/lib/api";
 import { useSeasonYear } from "@/lib/season";
+import { matchesAllTerms, nameTokens, probeTerm } from "@/lib/search";
 import { ROLE_TAG_SEVERITY } from "@/lib/theme";
 import { cn, useDebouncedValue } from "@/lib/utils";
 import { SearchInput } from "@/components/SearchInput";
@@ -22,10 +23,16 @@ export function PlayerSearch({ className }: { className?: string }) {
 
   const season = useSeasonYear();
 
+  // Names come back as "Last, First", so a query typed in natural order can't
+  // be matched as one substring. Fetch on the most selective term, then require
+  // the rest to land somewhere in the name.
+  const terms = useMemo(() => nameTokens(debounced), [debounced]);
+  const probe = probeTerm(terms);
+
   const searchQuery = useQuery({
-    queryKey: ["search", debounced, season.year],
-    queryFn: () => api.search(debounced, season.year),
-    enabled: debounced.length > 0 && season.year !== undefined,
+    queryKey: ["search", probe, season.year],
+    queryFn: () => api.search(probe, season.year),
+    enabled: probe.length > 0 && season.year !== undefined,
   });
 
   useEffect(() => {
@@ -41,6 +48,7 @@ export function PlayerSearch({ className }: { className?: string }) {
     const seen = new Set<number>();
     const out = [];
     for (const r of searchQuery.data?.results ?? []) {
+      if (!matchesAllTerms(r.player_name, terms)) continue;
       if (seen.has(r.player_id)) continue;
       seen.add(r.player_id);
       out.push(r);
@@ -75,7 +83,7 @@ export function PlayerSearch({ className }: { className?: string }) {
         className="md:w-72"
       />
 
-      {open && debounced.length > 0 && (
+      {open && probe.length > 0 && (
         <div className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-lg border border-line bg-surface shadow-[var(--shadow-card-hover)]">
           {searchQuery.isLoading && (
             <div className="flex items-center gap-2 px-3 py-2.5 text-sm text-muted">

@@ -151,7 +151,7 @@ function StatTiles({
       label: "Players projected",
       value: playersProjected !== undefined ? playersProjected.toLocaleString() : "—",
       icon: "pi pi-users",
-      tone: "#0ea5e9",
+      tone: "var(--color-sky)",
     },
     {
       label: "Models",
@@ -161,30 +161,30 @@ function StatTiles({
     },
   ];
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
       {items.map((it) => (
-        <Card key={it.label}>
-          <div className="flex items-center justify-between gap-3">
+        <Card key={it.label} className="stat-tile">
+          <div className="flex items-center justify-between gap-2">
             <div className="min-w-0">
-              <p className="m-0 truncate text-[11px] font-semibold uppercase tracking-wider text-muted">
+              <p className="m-0 truncate text-[10px] font-semibold uppercase tracking-wider text-muted">
                 {it.label}
               </p>
               {loading ? (
-                <Skeleton width="3rem" height="1.75rem" className="mt-1" />
+                <Skeleton width="2.5rem" height="1.375rem" className="mt-0.5" />
               ) : (
-                <p className="m-0 mt-1 truncate text-2xl font-semibold tabular-nums">
+                <p className="m-0 mt-0.5 truncate text-lg font-semibold tabular-nums">
                   {it.value}
                 </p>
               )}
             </div>
             <span
-              className="grid h-10 w-10 shrink-0 place-items-center rounded-lg"
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-md"
               style={{
                 background: `color-mix(in srgb, ${it.tone} 14%, transparent)`,
                 color: it.tone,
               }}
             >
-              <i className={`${it.icon} text-base`} />
+              <i className={`${it.icon} text-sm`} />
             </span>
           </div>
         </Card>

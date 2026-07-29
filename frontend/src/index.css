@@ -1,30 +1,44 @@
 @import "tailwindcss";
 
-/* PrimeReact: theme, base, icons. Theme is the green-accented light Lara preset. */
-@import "primereact/resources/themes/lara-light-green/theme.css";
+/* PrimeReact: theme, base, icons. Theme is the blue-accented dark Lara preset. */
+@import "primereact/resources/themes/lara-dark-blue/theme.css";
 @import "primereact/resources/primereact.min.css";
 @import "primeicons/primeicons.css";
 
+/* Blue Jays palette on a navy-black canvas. Surfaces are tinted toward the club
+   navy #1d2d5c rather than neutral grey. The royal #134a8e is too dark to carry
+   an accent here, so solid fills use a lifted royal and anything that has to be
+   *read* (links, positive deltas) uses the lighter club blue. Club red stays a
+   small accent, lightened for text so it clears contrast on the dark surface. */
 @theme {
-  --color-bg: #f5f7f9;
-  --color-surface: #ffffff;
-  --color-surface-alt: #f9fafb;
-  --color-line: #e5e7eb;
-  --color-line-strong: #d1d5db;
-  --color-fg: #111827;
-  --color-muted: #6b7280;
-  --color-subtle: #9ca3af;
-  --color-accent: #10b981;
-  --color-accent-hover: #059669;
-  --color-accent-soft: rgba(16, 185, 129, 0.12);
-  --color-accent-soft-strong: rgba(16, 185, 129, 0.2);
-  --color-danger-bg: #fef2f2;
-  --color-danger-line: #b91c1c;
+  --color-bg: #0a1322;
+  --color-surface: #111f36;
+  --color-surface-alt: #17293f;
+  --color-line: #24395c;
+  --color-line-strong: #35507c;
+  --color-fg: #e9f1fb;
+  --color-muted: #97abc7;
+  --color-subtle: #6d85a8;
+  --color-accent: #2f6fbd;
+  --color-accent-hover: #8cc0f0;
+  --color-accent-soft: rgba(75, 146, 219, 0.16);
+  --color-accent-soft-strong: rgba(75, 146, 219, 0.26);
+  --color-sky: #6fb0ea;
+  --color-brand-red: #e8291c;
+  --color-brand-red-text: #ff8378;
+  --color-danger-bg: #2a1315;
+  --color-danger-line: #ff8378;
 
   --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
 
-  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
-  --shadow-card-hover: 0 2px 6px rgba(15, 23, 42, 0.06), 0 6px 16px rgba(15, 23, 42, 0.08);
+  /* Dark surfaces read depth from a lifted border, not a drop shadow. */
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.24);
+  --shadow-card-hover: 0 2px 8px rgba(0, 0, 0, 0.36), 0 8px 20px rgba(0, 0, 0, 0.3);
+}
+
+:root {
+  /* Renders form controls, scrollbars and the canvas behind the app dark. */
+  color-scheme: dark;
 }
 
 html,
@@ -51,13 +65,13 @@ body,
   scrollbar-width: thin;
 }
 
-/* ----- PrimeReact overrides: lock primary to our emerald shade ----- */
+/* ----- PrimeReact overrides: lock primary to the Blue Jays blue ----- */
 :root {
-  --primary-color: #10b981;
+  --primary-color: #2f6fbd;
   --primary-color-text: #ffffff;
-  --highlight-bg: rgba(16, 185, 129, 0.12);
-  --highlight-text-color: #047857;
-  --focus-ring: 0 0 0 0.2rem rgba(16, 185, 129, 0.25);
+  --highlight-bg: rgba(75, 146, 219, 0.16);
+  --highlight-text-color: #8cc0f0;
+  --focus-ring: 0 0 0 0.2rem rgba(75, 146, 219, 0.35);
 }
 
 .p-component {
@@ -88,8 +102,16 @@ body,
   color: var(--color-muted);
   margin-bottom: 0.75rem;
 }
+/* Compact variant for the header KPI tiles — they carry one number each, so
+   drop the theme's stacked body + content padding down to a single tight box. */
+.stat-tile .p-card-body {
+  padding: 0.75rem 0.875rem;
+}
+.stat-tile .p-card-content {
+  padding: 0;
+}
 
-/* Inputs — pill border, focus ring in green */
+/* Inputs — pill border, focus ring in Jays blue */
 .p-inputtext {
   border-radius: 8px;
   border-color: var(--color-line);
@@ -125,7 +147,7 @@ body,
 }
 .p-accordion .p-accordion-header:not(.p-disabled).p-highlight .p-accordion-header-link {
   background: var(--color-accent-soft);
-  border-color: rgba(16, 185, 129, 0.35);
+  border-color: rgba(75, 146, 219, 0.4);
   color: var(--color-accent-hover);
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
@@ -153,12 +175,33 @@ body,
   border-color: var(--color-accent);
 }
 
-/* Tag */
+/* Tag — severities remapped onto the club palette so nothing renders green.
+   Plain tags stay neutral; red is reserved for the rarest of the three. */
 .p-tag {
   border-radius: 6px;
   font-weight: 500;
   font-size: 0.6875rem;
   letter-spacing: 0.02em;
+}
+.p-tag:not(.p-tag-success):not(.p-tag-info):not(.p-tag-warning):not(.p-tag-danger) {
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-line);
+  color: var(--color-muted);
+}
+.p-tag.p-tag-success {
+  background: var(--color-accent);
+  color: #ffffff;
+}
+/* The second series colour is a light chip on the dark canvas, which separates
+   it from the solid mid-blue far better than another dark fill would. */
+.p-tag.p-tag-info {
+  background: var(--color-sky);
+  color: var(--color-bg);
+}
+.p-tag.p-tag-warning,
+.p-tag.p-tag-danger {
+  background: var(--color-brand-red);
+  color: #ffffff;
 }
 
 /* Buttons — subtle, dashboard-ish */
@@ -177,6 +220,13 @@ body,
 /* Message */
 .p-message {
   border-radius: 10px;
+}
+
+/* ProgressSpinner ships a four-colour stroke cycle (red/blue/green/amber).
+   Drop the colour animation so it spins in the club blue. */
+.p-progress-spinner .p-progress-spinner-circle {
+  stroke: var(--color-accent);
+  animation: p-progress-spinner-dash 1.5s ease-in-out infinite;
 }
 
 /* DataTable — compact dashboard tables */
@@ -212,6 +262,34 @@ body,
   background: transparent;
   border: 0;
   padding-top: 0.5rem;
+}
+.p-paginator .p-paginator-pages .p-paginator-page.p-highlight {
+  background: var(--color-accent-soft);
+  border-color: transparent;
+  color: var(--color-accent-hover);
+}
+
+/* SelectButton — the preset's unselected fill is a neutral grey that reads
+   muddy next to the navy-tinted surfaces, and its blue is not the club's. */
+.p-selectbutton .p-button {
+  background: var(--color-surface-alt);
+  border-color: var(--color-line);
+  color: var(--color-muted);
+}
+.p-selectbutton .p-button:not(.p-highlight):not(.p-disabled):hover {
+  background: var(--color-surface);
+  border-color: var(--color-line-strong);
+  color: var(--color-fg);
+}
+.p-selectbutton .p-button.p-highlight,
+.p-selectbutton .p-button.p-highlight:hover {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #ffffff;
+}
+.p-selectbutton .p-button.p-highlight:hover {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
 }
 
 /* TabView — align with card styling */

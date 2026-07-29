@@ -448,8 +448,22 @@ def test_search_players_over_name_index(store):
     assert "cluster_id" not in pitcher_hits[0]
 
 
+def test_search_players_matches_name_in_any_order(store):
+    """Names are stored "Last, First"; a natural-order query must still hit."""
+    index, labels = store.name_index(YEAR), store.labels(YEAR)
+    stored = search_players(index, "Alpha, A", labels)
+    assert [h["player_id"] for h in stored] == [10]
+    assert search_players(index, "A Alpha", labels) == stored
+    assert search_players(index, "a alph", labels) == stored
+    # Every term has to land somewhere in the name, not just one of them.
+    assert search_players(index, "Alpha Delta", labels) == []
+
+
 def test_search_players_empty_query(store):
-    assert search_players(store.name_index(YEAR), "  ", store.labels(YEAR)) == []
+    index, labels = store.name_index(YEAR), store.labels(YEAR)
+    assert search_players(index, "  ", labels) == []
+    # Punctuation-only queries tokenise to nothing rather than matching everyone.
+    assert search_players(index, " , ", labels) == []
 
 
 def test_accuracy_payload_from_sidecars(store):

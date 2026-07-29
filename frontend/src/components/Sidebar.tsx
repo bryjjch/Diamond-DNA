@@ -1,4 +1,5 @@
 import { NavLink } from "react-router-dom";
+import { BaseballMark } from "@/components/BaseballMark";
 import { cn } from "@/lib/utils";
 
 interface NavItem {
@@ -18,7 +19,7 @@ export function Sidebar() {
     <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-line bg-surface md:flex">
       <div className="flex items-center gap-2 px-5 py-5">
         <span className="grid h-9 w-9 place-items-center rounded-lg bg-accent text-white shadow-sm">
-          <i className="pi pi-bolt text-base" />
+          <BaseballMark className="h-6 w-6" />
         </span>
         <div className="flex flex-col leading-tight">
           <span className="text-sm font-semibold tracking-tight">xWAR Engine</span>
@@ -49,11 +50,6 @@ export function Sidebar() {
           </NavLink>
         ))}
       </nav>
-
-      <div className="border-t border-line px-5 py-4 text-[11px] leading-relaxed text-muted">
-        <p className="m-0 font-medium text-fg">XGBoost · Marcel · GMM archetypes</p>
-        <p className="m-0">Statcast pipeline → gold lake → API</p>
-      </div>
     </aside>
   );
 }
