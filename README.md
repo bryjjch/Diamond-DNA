@@ -1,19 +1,17 @@
 # xWAR Engine
 
-MLB player performance projections, served as a cloud-native web app.
-The project began as player archetype clustering — the archetype (GMM)
-and similarity (KNN) models live on as the comparables engine behind the
-projections.
+xWAR Engine projects future MLB player performance (next-season batting and pitching lines) served as a live web app. Under the projections sits a comparable engine: a GMM archetype model plus kNN similarity that finds each player's closest historical analogues.
 
-## Revamping
+<img width="1508" height="744" alt="Screenshot 2026-07-29 at 11 16 32 AM" src="https://github.com/user-attachments/assets/03650dc7-733a-4e16-864f-460131d6306b" />
 
-This project is transitioning from archetype clustering to player
-performance projections. Many existing features carry over. Projections
-will start with next-season projections; rest-of-season projections could
-come later as a V2. Target stats:
+<img width="1495" height="751" alt="Screenshot 2026-07-29 at 11 17 18 AM" src="https://github.com/user-attachments/assets/6a08853b-1aad-4036-8701-1ebd5988cee4" />
 
-Batters: PA, AVG/OBP/SLG, wOBA, HR, SB, K%, BB%
-Pitchers: IP, ERA, FIP, K%, BB%, WHIP
+<img width="1503" height="749" alt="Screenshot 2026-07-29 at 11 17 34 AM" src="https://github.com/user-attachments/assets/63c6f739-dd85-4d8b-bb8b-82e814fc1cf8" />
+
+The data runs on a three-stage lake. A daily EventBridge triggered Step Functions pipeline ingests Statcast, running, defence, and bio data, builds features and standard stat lines, and produces model-ready matrices. Each stage is an independent Lambda so a partial failure doesn't fail the run. Projections are generated from the gold layer and served through an HTTP API on Lambda, with a React frontend on Vercel.
+
+For batters the engine projects PA, AVG/OBP/SLG, wOBA, HR, SB, K%, and BB%.
+For pitchers, IP, ERA, FIP, K%, BB%, and WHIP.
 
 ## Architecture
 
