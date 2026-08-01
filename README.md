@@ -1,6 +1,6 @@
 # xWAR Engine
 
-xWAR Engine projects future MLB player performance (next-season batting and pitching lines) served as a live web app. Under the projections sits a comparable engine: a GMM archetype model plus kNN similarity that finds each player's closest historical analogues.
+xWAR Engine projects future MLB player performance (next-season batting and pitching lines) using XGBoost, served as a live web app. Under the XGBoost projections sits a comparable engine: a GMM archetype model plus kNN similarity that finds each player's closest historical analogues.
 
 <img width="1508" height="744" alt="Screenshot 2026-07-29 at 11 16 32 AM" src="https://github.com/user-attachments/assets/03650dc7-733a-4e16-864f-460131d6306b" />
 
@@ -62,7 +62,7 @@ proceed):
 | 2 | `xwar-engine-silver-feature-build` | archetype features + standard stats (`silver_build`) | bronze | `silver/{role}/` |
 | 3 | `xwar-engine-gold-preprocessing` | archetype preprocessing + performance matrices (`gold_build`) | silver | `gold/features/{archetypes,performance_prediction}/{role}/` |
 
-ML stages (archetype clustering, KNN similarity, Marcel baseline) are run
+ML stages (XGBoost, archetype clustering, KNN similarity, Marcel baseline) are run
 manually via the CLIs under `src/ml/`. They read `gold/features/` and split
 their outputs by consumer:
 
